@@ -162,6 +162,10 @@ TEST_DATABASE_URL=postgresql+psycopg://payload:payload@localhost:5433/payload py
 - **No cache invalidation.** Cached results are assumed valid forever because the
   transformer is deterministic. If the transformer changed behaviour, its version would have
   to become part of both cache keys.
+- **The database connection is not held across transformer calls.** The cache ends its
+  read-only lookup transaction before calling the transformer, so a slow external service
+  pins neither a pooled connection nor, on PostgreSQL, an open transaction. The results are
+  written in a fresh, short transaction afterwards.
 - **Duplicate transformer calls remain possible across workers.** Two processes missing on
   the same string at the same instant both call the transformer; the second insert is
   simply ignored. Avoiding that would need locking around an external call, which costs more

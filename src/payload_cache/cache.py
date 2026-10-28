@@ -34,6 +34,12 @@ class TransformCache:
         results = self._lookup(distinct)
         misses = [value for value in distinct if value not in results]
         if misses:
+            # Nothing has been written yet, so ending the read-only lookup transaction loses
+            # nothing and hands the pooled connection back while we wait on the (external)
+            # transformer, instead of pinning a connection, and on PostgreSQL an open
+            # transaction, for the whole call. Callers must therefore have no unflushed
+            # writes at this point; _fill starts a fresh, short write transaction.
+            self._session.rollback()
             results.update(self._fill(misses))
         return results
 

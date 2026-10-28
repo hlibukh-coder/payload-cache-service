@@ -1,4 +1,4 @@
-from sqlalchemy import func, select
+from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from payload_cache.cache import LOOKUP_CHUNK_SIZE, TransformCache
@@ -48,6 +48,26 @@ def test_cache_survives_across_sessions(
         TransformCache(second, transformer).transform_many(["a"])
 
     assert transformer.calls == 1
+
+
+def test_connection_is_released_while_the_transformer_runs(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """A slow transformer must not pin a pooled connection for the duration of the call."""
+    engine = session_factory.kw["bind"]
+    assert isinstance(engine, Engine)
+    checked_out_during_transform: list[int] = []
+
+    class ObservingTransformer:
+        def transform(self, value: str) -> str:
+            checked_out_during_transform.append(engine.pool.checkedout())
+            return value.upper()
+
+    with session_factory() as session:
+        TransformCache(session, ObservingTransformer()).transform_many(["a", "b"])
+        session.commit()
+
+    assert checked_out_during_transform == [0, 0]
 
 
 def test_lookups_larger_than_one_chunk_are_complete(
