@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from payload_cache.db import make_engine
 from payload_cache.main import MAX_BODY_BYTES
 from payload_cache.schemas import MAX_ITEM_LENGTH, MAX_ITEMS
-from tests.conftest import SAMPLE_OUTPUT, SAMPLE_REQUEST
+from tests.conftest import SAMPLE_ID, SAMPLE_OUTPUT, SAMPLE_REQUEST
 
 JSON = {"content-type": "application/json"}
 
@@ -17,10 +17,10 @@ def test_create_then_read_returns_the_documented_output(client: TestClient) -> N
     created = client.post("/payload", json=SAMPLE_REQUEST)
 
     assert created.status_code == 201
-    payload_id = created.json()["id"]
-    assert created.headers["Location"] == f"/payload/{payload_id}"
+    assert created.json() == {"id": SAMPLE_ID, "message": "Payload created."}
+    assert created.headers["Location"] == f"/payload/{SAMPLE_ID}"
 
-    read = client.get(f"/payload/{payload_id}")
+    read = client.get(f"/payload/{SAMPLE_ID}")
 
     assert read.status_code == 200
     assert read.json() == {"output": SAMPLE_OUTPUT}
@@ -33,7 +33,10 @@ def test_reposting_the_same_request_reuses_the_id(client: TestClient, app: FastA
     second = client.post("/payload", json=SAMPLE_REQUEST)
 
     assert second.status_code == 200
-    assert second.json()["id"] == first.json()["id"]
+    assert second.json() == {
+        "id": first.json()["id"],
+        "message": "Payload already exists; returning the existing identifier.",
+    }
     assert second.headers["Location"] == first.headers["Location"]
     assert app.state.resources.transformer.calls == calls_after_first
 

@@ -9,7 +9,7 @@ from payload_cache.models import Payload, TransformedString
 from payload_cache.schemas import PayloadRequest
 from payload_cache.service import CreateResult, PayloadService, interleave, payload_id_for
 from payload_cache.transformer import UpperCaseTransformer
-from tests.conftest import SAMPLE_OUTPUT
+from tests.conftest import SAMPLE_ID, SAMPLE_OUTPUT
 
 
 def test_interleave_alternates_between_lists() -> None:
@@ -26,6 +26,10 @@ def test_payload_id_is_deterministic(sample_request: PayloadRequest) -> None:
 
     assert payload_id_for(sample_request) == payload_id_for(again)
     assert len(payload_id_for(sample_request)) == 64
+
+
+def test_sample_request_has_the_documented_id(sample_request: PayloadRequest) -> None:
+    assert payload_id_for(sample_request) == SAMPLE_ID
 
 
 def test_payload_id_depends_on_order_and_on_which_list_holds_what() -> None:

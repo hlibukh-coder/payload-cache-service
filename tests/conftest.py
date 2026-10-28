@@ -22,6 +22,10 @@ SAMPLE_REQUEST = {
 SAMPLE_OUTPUT = (
     "FIRST STRING, OTHER STRING, SECOND STRING, ANOTHER STRING, THIRD STRING, LAST STRING"
 )
+# The id the README documents for SAMPLE_REQUEST. Pinned so that a change to the canonical
+# form (key order, separators, escaping) is noticed: every stored payload id would otherwise
+# silently stop resolving.
+SAMPLE_ID = "831db6735056b8b4eca24283fd7129380f4c8f94948fc77a2a28a61f191da401"
 
 
 @pytest.fixture
