@@ -9,7 +9,12 @@ description = "FastAPI microservice that builds payloads from two string lists a
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.115",
+    # First release whose Starlette pin has no upper bound; earlier ones cap Starlette below
+    # what main.py imports.
+    "fastapi>=0.134",
+    # RequestBodyLimitMiddleware ships from 1.6 (and the TestClient has been an httpx2.Client
+    # since 1.2). FastAPI itself only guarantees >=0.46, so the floor the app needs is stated.
+    "starlette>=1.6",
     "uvicorn[standard]>=0.30",
     "sqlalchemy>=2.0",
     "pydantic>=2.7",
@@ -24,9 +29,6 @@ dev = [
     "pytest>=8",
     "ruff>=0.6",
     "mypy>=1.11",
-    # First release whose TestClient is an httpx2.Client, which the cache-cli tests hand to
-    # code that catches httpx2 errors.
-    "starlette>=1.2",
 ]
 postgres = [
     "psycopg[binary]>=3.2",

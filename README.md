@@ -203,10 +203,11 @@ TEST_DATABASE_URL=postgresql+psycopg://payload:payload@localhost:5433/payload py
 - **No authentication or rate limiting.** Out of scope for the exercise; both belong in the
   reverse proxy or gateway in front of a service like this.
 - **Dependencies locked for the image, ranged for the package.** `pyproject.toml` declares
-  compatibility floors, as a library would; `requirements.lock` pins what the image installs
-  (frozen inside the same `python:3.13` image), so rebuilding a commit gives the same image
-  and "the tests passed" says something about what ships. Regenerate it after changing the
-  dependencies:
+  compatibility floors, as a library would (the floors were installed once, `fastapi==0.134`
+  with `starlette==1.6`, and the suite run against them); `requirements.lock` pins what the
+  image installs (frozen inside the same `python:3.13` image), so rebuilding a commit gives
+  the same image and "the tests passed" says something about what ships. Regenerate it after
+  changing the dependencies:
 
   ```bash
   docker run --rm -v "$PWD:/src:ro" python:3.13.18-slim sh -c \
