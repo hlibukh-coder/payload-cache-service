@@ -15,8 +15,8 @@ GET  /payload/831db673...
 ## How a request flows
 
 1. **`main.py`** – `POST /payload` validates the body against `schemas.PayloadRequest`
-   (two non-empty lists of strings of equal length, no unknown fields) and hands it to
-   `PayloadService` with a request-scoped SQLAlchemy session.
+   (two non-empty, bounded lists of strings of equal length, no unknown fields) and hands
+   it to `PayloadService` with a request-scoped SQLAlchemy session.
 2. **`service.py`** – derives the payload id from the canonical JSON of the request. If a
    payload with that id already exists the id is returned immediately (HTTP 200) without
    touching the transformer.
@@ -171,7 +171,14 @@ TEST_DATABASE_URL=postgresql+psycopg://payload:payload@localhost:5433/payload py
   simply ignored. Avoiding that would need locking around an external call, which costs more
   than the occasional duplicate.
 - **Strict request validation.** Unknown fields and empty lists are rejected (HTTP 422):
-  both almost certainly indicate a client bug, and an empty payload is not useful.
+  both almost certainly indicate a client bug, and an empty payload is not useful. Requests
+  are bounded as well (`schemas.py`: 1 000 strings per list, 1 000 characters per string,
+  16 MiB body, HTTP 413 beyond that), so one anonymous POST cannot queue tens of thousands
+  of transformer calls or fill the cache with megabyte-sized rows. Strings that are legal
+  JSON but can be neither hashed nor stored (NUL characters, lone surrogates) get a 422
+  instead of failing with a 500 half-way through.
+- **No authentication or rate limiting.** Out of scope for the exercise; both belong in the
+  reverse proxy or gateway in front of a service like this.
 - **Single-stage Docker image.** All dependencies ship as wheels, so a build stage would add
   complexity without shrinking the image. The dependency layer is installed before the
   source is copied so code changes rebuild quickly.

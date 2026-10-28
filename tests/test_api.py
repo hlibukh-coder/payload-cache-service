@@ -1,7 +1,11 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from payload_cache.main import MAX_BODY_BYTES
+from payload_cache.schemas import MAX_ITEM_LENGTH, MAX_ITEMS
 from tests.conftest import SAMPLE_OUTPUT, SAMPLE_REQUEST
+
+JSON = {"content-type": "application/json"}
 
 
 def test_create_then_read_returns_the_documented_output(client: TestClient) -> None:
@@ -69,6 +73,53 @@ def test_non_string_items_are_rejected(client: TestClient) -> None:
 
 def test_unknown_fields_are_rejected(client: TestClient) -> None:
     assert client.post("/payload", json={**SAMPLE_REQUEST, "list_3": []}).status_code == 422
+
+
+def test_too_many_items_are_rejected(client: TestClient) -> None:
+    too_many = ["x"] * (MAX_ITEMS + 1)
+
+    assert client.post("/payload", json={"list_1": too_many, "list_2": too_many}).status_code == 422
+
+
+def test_too_long_strings_are_rejected(client: TestClient) -> None:
+    too_long = "x" * (MAX_ITEM_LENGTH + 1)
+
+    assert client.post("/payload", json={"list_1": [too_long], "list_2": ["y"]}).status_code == 422
+
+
+def test_nul_characters_are_rejected(client: TestClient) -> None:
+    # PostgreSQL cannot store NUL in text; refuse it up front on every backend.
+    body = b'{"list_1": ["a\\u0000b"], "list_2": ["c"]}'
+
+    response = client.post("/payload", content=body, headers=JSON)
+
+    assert response.status_code == 422
+    assert "NUL" in response.text
+
+
+def test_lone_surrogates_are_rejected(client: TestClient) -> None:
+    # Legal JSON that Python's parser accepts but that is not valid text: it can neither be
+    # hashed nor echoed back in an error response.
+    body = b'{"list_1": ["\\ud800"], "list_2": ["c"]}'
+
+    response = client.post("/payload", content=body, headers=JSON)
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "list_1", 0]
+
+
+def test_validation_errors_do_not_echo_the_input(client: TestClient) -> None:
+    response = client.post("/payload", json={"list_1": ["secret"], "list_2": []})
+
+    (error,) = response.json()["detail"]
+    assert set(error) == {"type", "loc", "msg"}
+    assert "secret" not in response.text
+
+
+def test_oversized_bodies_are_refused(client: TestClient) -> None:
+    body = b'{"list_1": ["' + b"x" * MAX_BODY_BYTES + b'"], "list_2": ["y"]}'
+
+    assert client.post("/payload", content=body, headers=JSON).status_code == 413
 
 
 def test_health(client: TestClient) -> None:

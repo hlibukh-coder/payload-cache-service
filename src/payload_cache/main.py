@@ -5,7 +5,10 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Request, Response, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from payload_cache.config import Settings
 from payload_cache.db import make_engine
@@ -27,6 +30,11 @@ def get_service(
 
 
 ServiceDep = Annotated[PayloadService, Depends(get_service)]
+
+# A request within the schema bounds (2 * MAX_ITEMS strings of MAX_ITEM_LENGTH characters,
+# every one of them JSON-escaped) stays well below this; anything larger is refused with
+# 413 instead of being read into memory and parsed first.
+MAX_BODY_BYTES = 16 * 1024 * 1024
 
 router = APIRouter()
 
@@ -77,6 +85,19 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+async def validation_error_handler(_request: Request, error: Exception) -> JSONResponse:
+    """422 without echoing the offending input.
+
+    FastAPI's default handler copies the input into every error, which reflects a request
+    of up to MAX_BODY_BYTES back at the client, and a lone surrogate in it (legal JSON that
+    the string validator rightly rejects) cannot be UTF-8 encoded, turning the 422 into a
+    500. Type, location and message tell the client everything it needs.
+    """
+    assert isinstance(error, RequestValidationError)
+    detail = [{key: item[key] for key in ("type", "loc", "msg")} for item in error.errors()]
+    return JSONResponse({"detail": detail}, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the application; tests call this with their own settings."""
     settings = settings or Settings()
@@ -101,6 +122,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+    app.add_middleware(RequestBodyLimitMiddleware, max_body_size=MAX_BODY_BYTES)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.include_router(router)
     return app
 
