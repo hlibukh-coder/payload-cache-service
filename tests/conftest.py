@@ -1,0 +1,67 @@
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session, sessionmaker
+
+from payload_cache.config import Settings
+from payload_cache.db import make_engine
+from payload_cache.main import create_app
+from payload_cache.models import Base
+from payload_cache.schemas import PayloadRequest
+from payload_cache.transformer import UpperCaseTransformer
+
+# The example from the task statement, used as the reference case throughout.
+SAMPLE_REQUEST = {
+    "list_1": ["first string", "second string", "third string"],
+    "list_2": ["other string", "another string", "last string"],
+}
+SAMPLE_OUTPUT = (
+    "FIRST STRING, OTHER STRING, SECOND STRING, ANOTHER STRING, THIRD STRING, LAST STRING"
+)
+
+
+@pytest.fixture
+def sample_request() -> PayloadRequest:
+    return PayloadRequest.model_validate(SAMPLE_REQUEST)
+
+
+@pytest.fixture
+def database_url(tmp_path: Path) -> str:
+    # A file-backed database rather than ":memory:" so tests go through the same connection
+    # handling as production, including several sessions open at once.
+    return f"sqlite:///{tmp_path / 'test.db'}"
+
+
+@pytest.fixture
+def session_factory(database_url: str) -> Iterator[sessionmaker[Session]]:
+    engine = make_engine(database_url)
+    Base.metadata.create_all(engine)
+    yield sessionmaker(engine, expire_on_commit=False)
+    engine.dispose()
+
+
+@pytest.fixture
+def session(session_factory: sessionmaker[Session]) -> Iterator[Session]:
+    with session_factory() as session:
+        yield session
+
+
+@pytest.fixture
+def transformer() -> UpperCaseTransformer:
+    return UpperCaseTransformer()
+
+
+@pytest.fixture
+def app(database_url: str) -> FastAPI:
+    # _env_file=None keeps a developer's local .env out of the test run.
+    return create_app(Settings(database_url=database_url, _env_file=None))
+
+
+@pytest.fixture
+def client(app: FastAPI) -> Iterator[TestClient]:
+    # Entering the context runs the lifespan, which creates the tables.
+    with TestClient(app) as client:
+        yield client
