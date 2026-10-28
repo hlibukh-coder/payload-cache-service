@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from payload_cache.cache import TransformCache
@@ -37,8 +38,10 @@ class PayloadService:
 
     def create(self, request: PayloadRequest) -> CreateResult:
         payload_id = payload_id_for(request)
-        if self._session.get(Payload, payload_id) is not None:
-            # Seen this exact request before: reuse the id without touching the transformer.
+        # Seen this exact request before: reuse the id without touching the transformer.
+        # Only the key is read; the stored output (megabytes at the schema bounds) is not
+        # needed to answer.
+        if self._session.scalar(select(Payload.id).where(Payload.id == payload_id)) is not None:
             return CreateResult(payload_id, created=False)
 
         transformed = self._cache.transform_many([*request.list_1, *request.list_2])
