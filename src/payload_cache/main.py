@@ -137,16 +137,36 @@ def health(session: SessionDep) -> dict[str, str]:
     return {"status": "ok"}
 
 
+# The one piece of client text that travels in an error location is the name of an unknown
+# field (``extra="forbid"``). A real misspelling is short; anything longer is cut rather
+# than reflected in full.
+MAX_LOCATION_PART_LENGTH = 64
+
+
+def _bounded(part: int | str) -> int | str:
+    if isinstance(part, str) and len(part) > MAX_LOCATION_PART_LENGTH:
+        return part[:MAX_LOCATION_PART_LENGTH] + "..."
+    return part
+
+
 async def validation_error_handler(_request: Request, error: Exception) -> JSONResponse:
     """422 without echoing the offending input.
 
     FastAPI's default handler copies the input into every error, which reflects a request
     of up to MAX_BODY_BYTES back at the client, and a lone surrogate in it (legal JSON that
     the string validator rightly rejects) cannot be UTF-8 encoded, turning the 422 into a
-    500. Type, location and message tell the client everything it needs.
+    500. Type, location and message tell the client everything it needs; the one
+    client-controlled part of a location, an unknown field's name, is bounded.
     """
     assert isinstance(error, RequestValidationError)
-    detail = [{key: item[key] for key in ("type", "loc", "msg")} for item in error.errors()]
+    detail = [
+        {
+            "type": item["type"],
+            "loc": [_bounded(part) for part in item["loc"]],
+            "msg": item["msg"],
+        }
+        for item in error.errors()
+    ]
     return JSONResponse({"detail": detail}, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 from payload_cache.db import make_engine
-from payload_cache.main import MAX_BODY_BYTES
+from payload_cache.main import MAX_BODY_BYTES, MAX_LOCATION_PART_LENGTH
 from payload_cache.schemas import MAX_ITEM_LENGTH, MAX_ITEMS
 from tests.conftest import SAMPLE_ID, SAMPLE_OUTPUT, SAMPLE_REQUEST
 
@@ -140,6 +140,18 @@ def test_validation_errors_do_not_echo_the_input(client: TestClient) -> None:
     (error,) = response.json()["detail"]
     assert set(error) == {"type", "loc", "msg"}
     assert "secret" not in response.text
+
+
+def test_unknown_field_names_are_bounded_in_errors(client: TestClient) -> None:
+    # The field name is the one place where client text reaches an error location.
+    long_name = "k" * 5_000
+
+    response = client.post("/payload", json={**SAMPLE_REQUEST, long_name: 1})
+
+    (error,) = response.json()["detail"]
+    assert error["type"] == "extra_forbidden"
+    assert error["loc"] == ["body", "k" * MAX_LOCATION_PART_LENGTH + "..."]
+    assert len(response.content) < 1_000
 
 
 def test_oversized_bodies_are_refused(client: TestClient) -> None:
