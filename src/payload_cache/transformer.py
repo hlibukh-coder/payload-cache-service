@@ -1,8 +1,8 @@
 """The "transformer function": a stand-in for an external service.
 
 The transformation itself is trivial (upper-casing). What matters is that every call is
-assumed to be expensive, so the implementation counts calls: tests and operators can
-verify that the cache keeps that number to a minimum, which is the point of the service.
+assumed to be expensive, so the implementation counts calls and the tests assert exact
+counts, proving that the cache keeps that number to a minimum - the point of the service.
 """
 
 import threading

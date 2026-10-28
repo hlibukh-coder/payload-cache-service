@@ -14,6 +14,8 @@ dependencies = [
     "sqlalchemy>=2.0",
     "pydantic>=2.7",
     "pydantic-settings>=2.10",
+    # httpx's successor. Starlette's TestClient is built on it, so cache-cli and the tests
+    # share one HTTP client and one set of exception types.
     "httpx2>=2.0",
 ]
 
@@ -22,6 +24,9 @@ dev = [
     "pytest>=8",
     "ruff>=0.6",
     "mypy>=1.11",
+    # First release whose TestClient is an httpx2.Client, which the cache-cli tests hand to
+    # code that catches httpx2 errors.
+    "starlette>=1.2",
 ]
 postgres = [
     "psycopg[binary]>=3.2",
@@ -57,4 +62,4 @@ select = [
 [tool.mypy]
 strict = true
 plugins = ["pydantic.mypy"]
-files = ["src"]
+files = ["src", "tests"]

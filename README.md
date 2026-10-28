@@ -173,6 +173,10 @@ TEST_DATABASE_URL=postgresql+psycopg://payload:payload@localhost:5433/payload py
 - **SQLAlchemy 2.0 rather than SQLModel.** Keeps API schemas (Pydantic) and persistence
   models (ORM) separate: the request schema has validation rules that make no sense on a
   table, and the tables have columns the API never exposes.
+- **`httpx2` rather than `httpx`.** It is httpx's successor by the same author, and
+  Starlette's `TestClient` is built on it, so `cache-cli` and the tests share one HTTP client
+  and one set of exception types: the `HTTPStatusError` the CLI catches is the one the
+  `TestClient` raises.
 - **Synchronous endpoints.** FastAPI runs `def` endpoints in a thread pool, which fits a
   synchronous SQLAlchemy session and keeps the code straightforward. Going async would only
   pay off once the transformer is a real network call.

@@ -1,8 +1,8 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
 
-from payload_cache import db
 from payload_cache.db import make_engine
 
 
@@ -12,7 +12,7 @@ def test_unsupported_databases_are_refused_before_the_first_query() -> None:
 
 
 def test_old_sqlite_is_refused(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(db.sqlite3, "sqlite_version_info", (3, 34, 0))
+    monkeypatch.setattr(sqlite3, "sqlite_version_info", (3, 34, 0))
 
     with pytest.raises(RuntimeError, match="RETURNING"):
         make_engine(f"sqlite:///{tmp_path / 'test.db'}")
