@@ -33,6 +33,9 @@ class TransformedString(Base):
     # inspectable when debugging what the transformer was asked for.
     original: Mapped[str] = mapped_column(Text)
     transformed: Mapped[str] = mapped_column(Text)
+    # Not consulted when serving requests. Recorded now so that an age-based eviction job, or
+    # someone inspecting the table, can tell how old a row is without a migration later (the
+    # cache is otherwise unbounded; see "No cache invalidation" in the README).
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
@@ -47,4 +50,5 @@ class Payload(Base):
 
     id: Mapped[str] = mapped_column(String(DIGEST_LENGTH), primary_key=True)
     output: Mapped[str] = mapped_column(Text)
+    # Same purpose as TransformedString.created_at.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

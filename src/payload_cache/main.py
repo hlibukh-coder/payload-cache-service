@@ -51,9 +51,12 @@ def get_service(resources: ResourcesDep, session: SessionDep) -> PayloadService:
 
 ServiceDep = Annotated[PayloadService, Depends(get_service)]
 
-# A request within the schema bounds (2 * MAX_ITEMS strings of MAX_ITEM_LENGTH characters,
-# every one of them JSON-escaped) stays well below this; anything larger is refused with
-# 413 instead of being read into memory and parsed first.
+# Coarse guard applied before the body is read into memory and parsed; the schema bounds in
+# schemas.py are the real limit. 2 * MAX_ITEMS strings of MAX_ITEM_LENGTH characters take
+# 2 MB as ASCII and 12 MB with every character \u-escaped. The one in-bounds shape that does
+# not fit is text outside the BMP escaped as surrogate pairs (12 bytes per character, up to
+# 24 MB); it gets 413 instead of 422, accepted rather than doubling the memory one request
+# may claim (cache-cli and httpx2 send raw UTF-8, which never exceeds 8 MB here).
 MAX_BODY_BYTES = 16 * 1024 * 1024
 
 router = APIRouter()

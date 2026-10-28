@@ -48,7 +48,7 @@ class CliSettings(BaseSettings):
         cli_prog_name="cache-cli",
         # argparse would otherwise fold -H (host) into -h (help).
         case_sensitive=True,
-        # Show "-i str" rather than "-i {str,null}" for optional flags.
+        # Show "-i FILE" rather than "-i {FILE,null}" for optional flags.
         cli_hide_none_type=True,
     )
 
@@ -68,6 +68,7 @@ class CliSettings(BaseSettings):
         validation_alias=AliasChoices("i", "input"),
         description="File holding the JSON request, or '-' for stdin (use either this or --json).",
     )
+    # Not "json": that name would shadow BaseModel.json() (Pydantic warns, mypy rejects it).
     json_body: JSON | None = Field(
         default=None,
         validation_alias=AliasChoices("j", "json"),
@@ -88,8 +89,9 @@ class CliSettings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # Command line only: with the aliases above, the environment source would also pick
-        # up ambient variables such as HOST, which is not what a test tool should do.
+        # Command line only: a test tool should do exactly what its flags say, and the
+        # environment source would otherwise also read variables spelled like the aliases
+        # above (host, H, repeat, ...).
         return (init_settings,)
 
     @field_validator("input")

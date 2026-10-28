@@ -73,7 +73,7 @@ Interactive docs: <http://localhost:8000/docs>. Configuration is read from the e
 
 | variable                      | default                              | purpose                                   |
 |-------------------------------|--------------------------------------|-------------------------------------------|
-| `DATABASE_URL`                | `sqlite:///./data/payload_cache.db`  | any SQLAlchemy URL (SQLite or PostgreSQL) |
+| `DATABASE_URL`                | `sqlite:///./data/payload_cache.db`  | SQLAlchemy URL, SQLite (3.35+) or PostgreSQL |
 | `ECHO_SQL`                    | `false`                              | log every SQL statement                   |
 | `TRANSFORMER_LATENCY_SECONDS` | `0`                                  | simulate a slow external service          |
 
@@ -184,19 +184,23 @@ TEST_DATABASE_URL=postgresql+psycopg://payload:payload@localhost:5433/payload py
   a cache that can be rebuilt. A real deployment would add Alembic.
 - **No cache invalidation.** Cached results are assumed valid forever because the
   transformer is deterministic. If the transformer changed behaviour, its version would have
-  to become part of both cache keys.
+  to become part of both cache keys. Rows do carry `created_at`, so an age-based eviction job
+  can be added later without a schema change.
 - **The database connection is not held across transformer calls.** The cache ends its
   read-only lookup transaction before calling the transformer, so a slow external service
   pins neither a pooled connection nor, on PostgreSQL, an open transaction. The results are
   written in a fresh, short transaction afterwards.
-- **Duplicate transformer calls remain possible across workers.** Two processes missing on
-  the same string at the same instant both call the transformer; the second insert is
-  simply ignored. Avoiding that would need locking around an external call, which costs more
-  than the occasional duplicate.
+- **Duplicate transformer calls remain possible under concurrency.** Two requests missing on
+  the same string at the same instant, in two threads of one process (FastAPI's thread pool)
+  just as in two processes, both call the transformer; the second insert is simply ignored.
+  `test_concurrent_identical_requests_converge_on_one_payload` therefore checks that the
+  database converges, not the call count. Closing the gap would mean holding every other
+  caller back until the first one's external call returns (an in-flight map per process, a
+  lock across processes), which costs more than the occasional duplicate.
 - **Strict request validation.** Unknown fields and empty lists are rejected (HTTP 422):
   both almost certainly indicate a client bug, and an empty payload is not useful. Requests
-  are bounded as well (`schemas.py`: 1 000 strings per list, 1 000 characters per string,
-  16 MiB body, HTTP 413 beyond that), so one anonymous POST cannot queue tens of thousands
+  are bounded as well (`schemas.py`: 1 000 strings per list, 1 000 characters per string;
+  `main.py`: 16 MiB body, HTTP 413 beyond that), so one anonymous POST cannot queue tens of thousands
   of transformer calls or fill the cache with megabyte-sized rows. Strings that are legal
   JSON but can be neither hashed nor stored (NUL characters, lone surrogates) get a 422
   instead of failing with a 500 half-way through.
