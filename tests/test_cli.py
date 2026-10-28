@@ -51,7 +51,11 @@ def test_lower_case_h_is_help_not_host(capsys: pytest.CaptureFixture[str]) -> No
         parse("-h")
 
     assert exit_info.value.code == 0
-    assert "-H, --host" in capsys.readouterr().out
+    # argparse lays the option out as "-H URL, --host URL" before Python 3.13 and as
+    # "-H, --host URL" from 3.13 on; assert on the parts both layouts share.
+    out = capsys.readouterr().out
+    assert "-H" in out
+    assert "--host URL" in out
 
 
 def test_help_reads_like_the_task_statement(capsys: pytest.CaptureFixture[str]) -> None:
