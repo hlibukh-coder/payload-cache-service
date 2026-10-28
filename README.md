@@ -52,9 +52,11 @@ Why this shape:
   database. The test suite asserts the exact call counts.
 - **Races are harmless by construction.** Two requests racing on the same string or the
   same payload write identical values, so `ON CONFLICT DO NOTHING` is the correct
-  resolution and no request ever fails because another one was faster.
-  `tests/test_service.py::test_concurrent_identical_requests_converge_on_one_payload`
-  pins this down with eight threads.
+  resolution and no request ever fails because another one was faster. Cached strings are
+  inserted in key order, so two requests racing on overlapping strings queue behind each
+  other instead of deadlocking on PostgreSQL, where an `ON CONFLICT` insert waits for an
+  uncommitted row with the same key. The two `test_concurrent_*` tests in
+  `tests/test_service.py` pin both properties down with threads.
 
 ## Running it
 

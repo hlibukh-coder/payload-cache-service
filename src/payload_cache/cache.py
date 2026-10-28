@@ -5,6 +5,7 @@ transformer only for strings nobody has asked for before, using one query per ba
 rather than one per string.
 """
 
+import operator
 from collections.abc import Iterable, Sequence
 
 from sqlalchemy import select
@@ -58,6 +59,10 @@ class TransformCache:
             for value, result in transformed.items()
         ]
         # A concurrent request may have stored some of these strings since our lookup. The
-        # transformer is deterministic, so keeping the existing rows loses nothing.
+        # transformer is deterministic, so keeping the existing rows loses nothing. The rows
+        # go in key order on purpose: PostgreSQL makes an ON CONFLICT insert wait for an
+        # uncommitted row with the same key, so two requests inserting overlapping strings
+        # in one global order can only queue behind each other, never deadlock.
+        rows.sort(key=operator.itemgetter("key"))
         self._session.execute(insert_or_ignore(self._session, TransformedString), rows)
         return transformed

@@ -104,3 +104,48 @@ def test_concurrent_identical_requests_converge_on_one_payload(
     with session_factory() as session:
         assert session.scalar(select(func.count()).select_from(Payload)) == 1
         assert session.scalar(select(func.count()).select_from(TransformedString)) == 6
+
+
+class _SynchronisedTransformer:
+    """Upper-cases, but holds each worker's first call until every worker has arrived.
+
+    Guarantees that all workers have missed the cache lookup before any of them writes,
+    which is the only window in which the order of the inserts matters.
+    """
+
+    def __init__(self, workers: int) -> None:
+        self._barrier = threading.Barrier(workers)
+        self._arrived = threading.local()
+
+    def transform(self, value: str) -> str:
+        if not getattr(self._arrived, "done", False):
+            self._arrived.done = True
+            self._barrier.wait()
+        return value.upper()
+
+
+def test_concurrent_overlapping_requests_in_different_order_both_succeed(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Two requests missing on the same strings, enumerated in opposite order.
+
+    PostgreSQL makes an ``ON CONFLICT`` insert wait for an uncommitted row with the same
+    key, so without one global insert order the two transactions would wait on each other
+    and one would fail with a deadlock error. SQLite serialises writers, so there the test
+    is trivially green.
+    """
+    strings = [f"string {i}" for i in range(300)]
+    forward = PayloadRequest(list_1=strings, list_2=strings)
+    backward = PayloadRequest(list_1=strings[::-1], list_2=strings[::-1])
+    transformer = _SynchronisedTransformer(workers=2)
+
+    def create(request: PayloadRequest) -> CreateResult:
+        with session_factory() as session:
+            return PayloadService(session, transformer).create(request)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(create, [forward, backward]))
+
+    assert all(result.created for result in results)
+    with session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(TransformedString)) == len(strings)
