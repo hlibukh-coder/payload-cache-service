@@ -151,7 +151,11 @@ async def validation_error_handler(_request: Request, error: Exception) -> JSONR
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    """Build the application; tests call this with their own settings."""
+    """Build the application.
+
+    uvicorn calls this through ``--factory`` and tests pass their own settings, so importing
+    the module reads no configuration and has no side effects.
+    """
     settings = settings or Settings()
 
     @asynccontextmanager
@@ -180,6 +184,3 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.include_router(router)
     return app
-
-
-app = create_app()

@@ -63,8 +63,16 @@ def transformer() -> UpperCaseTransformer:
 
 @pytest.fixture
 def app(database_url: str) -> FastAPI:
-    # _env_file=None keeps a developer's local .env out of the test run.
-    return create_app(Settings(database_url=database_url, _env_file=None))
+    # Every field is given explicitly and _env_file=None, so neither exported variables nor
+    # a developer's local .env can change what the tests run against.
+    return create_app(
+        Settings(
+            database_url=database_url,
+            echo_sql=False,
+            transformer_latency_seconds=0.0,
+            _env_file=None,
+        )
+    )
 
 
 @pytest.fixture

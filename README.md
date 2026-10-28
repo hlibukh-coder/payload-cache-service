@@ -65,7 +65,7 @@ Why this shape:
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-uvicorn payload_cache.main:app --reload
+uvicorn --factory payload_cache.main:create_app --reload
 ```
 
 Interactive docs: <http://localhost:8000/docs>. Configuration is read from the environment
