@@ -9,7 +9,10 @@ services:
     # environment:
     #   TRANSFORMER_LATENCY_SECONDS: "0.05"  # makes cache hits visible when demoing with cache-cli
 
-  # Optional: the same image on PostgreSQL. Start with `docker compose --profile postgres up`.
+  # Optional: the same image on PostgreSQL. Start it by name,
+  # `docker compose --profile postgres up --build api-postgres`, so the SQLite `api` above
+  # stays down. Development-only credentials; a deployment injects its own through the
+  # environment and does not publish the database port on every interface like this.
   postgres:
     image: postgres:17-alpine
     profiles: ["postgres"]
@@ -22,7 +25,9 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U payload -d payload"]
+      # -h forces a TCP probe: while the entrypoint initialises the database it runs a
+      # socket-only server that already answers pg_isready, but api-postgres needs TCP.
+      test: ["CMD-SHELL", "pg_isready -h localhost -U payload -d payload"]
       interval: 2s
       timeout: 2s
       retries: 15

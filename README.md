@@ -87,10 +87,18 @@ The SQLite file lives on the `payload-data` volume, so the cache survives restar
 image runs as a non-root user; its `HEALTHCHECK` polls `GET /health`, which runs `SELECT 1`
 and answers 503 when the database is unreachable.
 
-The same image works against PostgreSQL; `DATABASE_URL` picks the backend:
+`cache-cli` is installed in the image too, so the service can be exercised from inside the
+container without installing anything on the host:
 
 ```bash
-docker compose --profile postgres up --build   # API on :8001, PostgreSQL on :5433
+docker compose exec api cache-cli --repeat 3 --json '{"list_1": ["a"], "list_2": ["b"]}'
+```
+
+The same image works against PostgreSQL; `DATABASE_URL` picks the backend. Naming the
+service keeps the SQLite `api` from starting alongside:
+
+```bash
+docker compose --profile postgres up --build api-postgres   # API on :8001, PostgreSQL on :5433
 ```
 
 ## `cache-cli`
@@ -150,7 +158,9 @@ ruff check . && ruff format --check . && mypy
   the application.
 
 The suite runs against PostgreSQL as well, which exercises the PostgreSQL branch of the
-one dialect-specific statement:
+one dialect-specific statement and the deadlock regression test. It drops and recreates the
+tables in whatever database `TEST_DATABASE_URL` names, so point it only at a throwaway one
+such as the compose container:
 
 ```bash
 pip install -e ".[dev,postgres]"
