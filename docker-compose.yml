@@ -1,0 +1,43 @@
+services:
+  # Default deployment: SQLite on a named volume, no other infrastructure.
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - payload-data:/data
+    # environment:
+    #   TRANSFORMER_LATENCY_SECONDS: "0.05"  # makes cache hits visible when demoing with cache-cli
+
+  # Optional: the same image on PostgreSQL. Start with `docker compose --profile postgres up`.
+  postgres:
+    image: postgres:17-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: payload
+      POSTGRES_PASSWORD: payload
+      POSTGRES_DB: payload
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payload -d payload"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  api-postgres:
+    build: .
+    profiles: ["postgres"]
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://payload:payload@postgres:5432/payload
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  payload-data:
+  postgres-data:
