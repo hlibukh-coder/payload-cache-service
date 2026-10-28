@@ -126,8 +126,9 @@ Argument parsing is done with Pydantic Settings (`cli.py`): flags are validated 
 normalised (`--host` must be an HTTP URL, `--repeat` a positive integer, `--input` an
 existing file or `-`, exactly one of `--input`/`--json`), and the request body is validated
 against the API schema before it is sent. Exit codes: `0` success, `1` the service could not
-be reached or answered with an error (or disagreed with itself across repeats), `2` invalid
-invocation.
+be reached, answered with an error or with a body that is not the API's (or disagreed with
+itself across repeats), `2` invalid invocation, including an unreadable request file or an
+unwritable report location.
 
 ## Tests
 

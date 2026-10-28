@@ -25,7 +25,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
-from payload_cache.schemas import PayloadRequest
+from payload_cache.schemas import PayloadCreated, PayloadRead, PayloadRequest
 
 # Conventional spelling for "use stdin / stdout instead of a file".
 STDIO = "-"
@@ -89,6 +89,19 @@ class CliSettings(BaseSettings):
             raise ValueError(f"input file not found: {value}")
         return value
 
+    @field_validator("output")
+    @classmethod
+    def _output_location_must_be_writable(cls, value: str) -> str:
+        # Checked before any request is sent: finding out after the run that the report
+        # cannot be written would waste the run and hide the result.
+        if value != STDIO:
+            path = Path(value)
+            if path.is_dir():
+                raise ValueError(f"output path is a directory: {value}")
+            if not path.parent.is_dir():
+                raise ValueError(f"output directory not found: {path.parent}")
+        return value
+
     @model_validator(mode="after")
     def _exactly_one_request_source(self) -> "CliSettings":
         if (self.input is None) == (self.json_body is None):
@@ -102,7 +115,9 @@ def load_request(settings: CliSettings, stdin: IO[str]) -> PayloadRequest:
     elif settings.input == STDIO:
         raw = stdin.read()
     else:
-        raw = Path(str(settings.input)).read_text(encoding="utf-8")
+        assert settings.input is not None  # the model validator guarantees one source
+        # utf-8-sig also accepts the BOM some editors put in front of JSON files.
+        raw = Path(settings.input).read_text(encoding="utf-8-sig")
     # Validating here means a malformed request fails fast with a precise message rather
     # than as a 422 from the server.
     return PayloadRequest.model_validate_json(raw)
@@ -123,7 +138,9 @@ def run(client: httpx2.Client, request: PayloadRequest, repeat: int) -> dict[str
         created = client.post("/payload", json=request.model_dump())
         created.raise_for_status()
         post_ms = (time.perf_counter() - started) * 1000
-        payload_id = created.json()["id"]
+        # Parsed through the API schemas: a 2xx with some other body (a proxy or the wrong
+        # server answering) is then a reported error rather than a crash.
+        payload_id = PayloadCreated.model_validate_json(created.content).id
 
         started = time.perf_counter()
         read = client.get(f"/payload/{payload_id}")
@@ -131,7 +148,7 @@ def run(client: httpx2.Client, request: PayloadRequest, repeat: int) -> dict[str
         get_ms = (time.perf_counter() - started) * 1000
 
         ids.add(payload_id)
-        outputs.add(read.json()["output"])
+        outputs.add(PayloadRead.model_validate_json(read.content).output)
         runs.append(
             {
                 "iteration": iteration,
@@ -189,6 +206,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValidationError as error:
         print(f"cache-cli: invalid request\n{_describe(error, as_flags=False)}", file=sys.stderr)
         return 2
+    except UnicodeDecodeError:
+        print(f"cache-cli: invalid request\n  {settings.input}: not UTF-8 encoded", file=sys.stderr)
+        return 2
+    except OSError as error:
+        print(f"cache-cli: cannot read {settings.input}: {error.strerror}", file=sys.stderr)
+        return 2
 
     try:
         with make_client(str(settings.host)) as client:
@@ -203,6 +226,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     except httpx2.HTTPError as error:
         print(f"cache-cli: {error}", file=sys.stderr)
         return 1
+    except ValidationError as error:
+        print(
+            f"cache-cli: unexpected response from the service\n{_describe(error, as_flags=False)}",
+            file=sys.stderr,
+        )
+        return 1
 
-    write_report(report, settings.output, sys.stdout)
+    try:
+        write_report(report, settings.output, sys.stdout)
+    except OSError as error:
+        print(f"cache-cli: cannot write {settings.output}: {error.strerror}", file=sys.stderr)
+        return 2
     return 0 if report["consistent"] else 1

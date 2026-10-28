@@ -80,6 +80,13 @@ def test_missing_input_file_is_rejected(tmp_path: Path) -> None:
         parse("-i", str(tmp_path / "missing.json"))
 
 
+def test_output_location_is_checked_up_front(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="directory not found"):
+        parse("-j", "{}", "-o", str(tmp_path / "missing" / "report.json"))
+    with pytest.raises(ValidationError, match="is a directory"):
+        parse("-j", "{}", "-o", str(tmp_path))
+
+
 def test_environment_variables_are_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOST", "http://from-env:1")
     monkeypatch.setenv("repeat", "7")
@@ -102,6 +109,15 @@ def test_request_from_inline_json() -> None:
 def test_request_from_file(tmp_path: Path) -> None:
     request_file = tmp_path / "request.json"
     request_file.write_text(SAMPLE_JSON)
+
+    request = load_request(parse("-i", str(request_file)), io.StringIO())
+
+    assert request.list_1 == SAMPLE_REQUEST["list_1"]
+
+
+def test_request_file_may_start_with_a_bom(tmp_path: Path) -> None:
+    request_file = tmp_path / "request.json"
+    request_file.write_text(SAMPLE_JSON, encoding="utf-8-sig")
 
     request = load_request(parse("-i", str(request_file)), io.StringIO())
 
@@ -172,6 +188,29 @@ def test_main_rejects_bad_arguments(capsys: pytest.CaptureFixture[str]) -> None:
 def test_main_rejects_bad_request(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["-j", '{"list_1": ["a"], "list_2": ["b", "c"]}']) == 2
     assert "same length" in capsys.readouterr().err
+
+
+def test_main_rejects_non_utf8_input(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    request_file = tmp_path / "request.json"
+    request_file.write_bytes(b"\xff\xfe{}")
+
+    assert main(["-i", str(request_file)]) == 2
+    assert "not UTF-8" in capsys.readouterr().err
+
+
+def test_main_reports_unexpected_response_bodies(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The wrong server (an SPA dev server, a proxy's error page) answering 200 with HTML.
+    def html(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, text="<html>Welcome</html>")
+
+    monkeypatch.setattr(
+        cli, "make_client", lambda base_url: httpx2.Client(transport=httpx2.MockTransport(html))
+    )
+
+    assert main(["-j", SAMPLE_JSON]) == 1
+    assert "unexpected response" in capsys.readouterr().err
 
 
 def test_main_reports_http_errors(
