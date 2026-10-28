@@ -1,6 +1,10 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
 
+from payload_cache.db import make_engine
 from payload_cache.main import MAX_BODY_BYTES
 from payload_cache.schemas import MAX_ITEM_LENGTH, MAX_ITEMS
 from tests.conftest import SAMPLE_OUTPUT, SAMPLE_REQUEST
@@ -29,7 +33,25 @@ def test_reposting_the_same_request_reuses_the_id(client: TestClient, app: FastA
 
     assert second.status_code == 200
     assert second.json()["id"] == first.json()["id"]
+    assert second.headers["Location"] == first.headers["Location"]
     assert app.state.transformer.calls == calls_after_first
+
+
+def test_location_follows_the_root_path_of_a_proxy(app: FastAPI) -> None:
+    with TestClient(app, root_path="/api") as client:
+        response = client.post("/payload", json=SAMPLE_REQUEST)
+
+    assert response.headers["Location"] == f"/api/payload/{response.json()['id']}"
+
+
+def test_openapi_documents_the_location_header_and_the_404_body(client: TestClient) -> None:
+    paths = client.get("/openapi.json").json()["paths"]
+
+    post_responses = paths["/payload"]["post"]["responses"]
+    assert "Location" in post_responses["201"]["headers"]
+    assert "Location" in post_responses["200"]["headers"]
+    get_404 = paths["/payload/{payload_id}"]["get"]["responses"]["404"]
+    assert get_404["content"]["application/json"]["example"] == {"detail": "Payload not found."}
 
 
 def test_only_new_strings_reach_the_transformer(client: TestClient, app: FastAPI) -> None:
@@ -124,3 +146,15 @@ def test_oversized_bodies_are_refused(client: TestClient) -> None:
 
 def test_health(client: TestClient) -> None:
     assert client.get("/health").json() == {"status": "ok"}
+
+
+def test_health_is_503_when_the_database_is_unreachable(
+    client: TestClient, app: FastAPI, tmp_path: Path
+) -> None:
+    # A directory is not a database file, so every connection attempt fails.
+    app.state.session_factory = sessionmaker(make_engine(f"sqlite:///{tmp_path}"))
+
+    response = client.get("/health")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Database unavailable."}

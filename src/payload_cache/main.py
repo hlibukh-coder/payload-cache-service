@@ -7,6 +7,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
@@ -42,20 +44,39 @@ router = APIRouter()
 # the synchronous SQLAlchemy session used underneath.
 
 
+_LOCATION_HEADER = {
+    "Location": {"description": "Where the payload can be read.", "schema": {"type": "string"}}
+}
+
+
 @router.post(
     "/payload",
     response_model=PayloadCreated,
     status_code=status.HTTP_201_CREATED,
     responses={
+        status.HTTP_201_CREATED: {"description": "Payload created.", "headers": _LOCATION_HEADER},
         status.HTTP_200_OK: {
             "model": PayloadCreated,
             "description": "An identical payload already existed; its identifier is returned.",
-        }
+            "headers": _LOCATION_HEADER,
+        },
     },
 )
-def create_payload(body: PayloadRequest, service: ServiceDep, response: Response) -> PayloadCreated:
+def create_payload(
+    body: PayloadRequest, service: ServiceDep, request: Request, response: Response
+) -> PayloadCreated:
+    """Generate a payload from two lists of strings.
+
+    Every string is passed through the transformer (cached) and the results are interleaved:
+    ``list_1[0], list_2[0], list_1[1], list_2[1], ...``. The identifier is derived from the
+    request, so an identical request answers 200 with the identifier it already has.
+    """
     result = service.create(body)
-    response.headers["Location"] = f"/payload/{result.payload_id}"
+    # Derived from the route so it follows a renamed path or a root_path set by a proxy;
+    # kept relative so the client resolves it against the URL it actually used.
+    response.headers["Location"] = request.url_for(
+        "read_payload", payload_id=result.payload_id
+    ).path
     if not result.created:
         response.status_code = status.HTTP_200_OK
         return PayloadCreated(
@@ -68,12 +89,18 @@ def create_payload(body: PayloadRequest, service: ServiceDep, response: Response
 @router.get(
     "/payload/{payload_id}",
     response_model=PayloadRead,
-    responses={status.HTTP_404_NOT_FOUND: {"description": "No payload with this identifier."}},
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "description": "No payload with this identifier.",
+            "content": {"application/json": {"example": {"detail": "Payload not found."}}},
+        }
+    },
 )
 def read_payload(
     payload_id: Annotated[str, Path(pattern=rf"^[0-9a-f]{{{DIGEST_LENGTH}}}$")],
     service: ServiceDep,
 ) -> PayloadRead:
+    """Read the output of a previously generated payload."""
     output = service.get_output(payload_id)
     if output is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Payload not found.")
@@ -81,7 +108,14 @@ def read_payload(
 
 
 @router.get("/health", include_in_schema=False)
-def health() -> dict[str, str]:
+def health(session: Annotated[Session, Depends(get_session)]) -> dict[str, str]:
+    """Liveness and readiness in one: the database is the only dependency that can fail."""
+    try:
+        session.execute(text("SELECT 1"))
+    except OperationalError as error:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable."
+        ) from error
     return {"status": "ok"}
 
 

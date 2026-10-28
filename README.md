@@ -84,7 +84,8 @@ docker compose up --build
 ```
 
 The SQLite file lives on the `payload-data` volume, so the cache survives restarts. The
-image runs as a non-root user and has a health check on `GET /health`.
+image runs as a non-root user; its `HEALTHCHECK` polls `GET /health`, which runs `SELECT 1`
+and answers 503 when the database is unreachable.
 
 The same image works against PostgreSQL; `DATABASE_URL` picks the backend:
 

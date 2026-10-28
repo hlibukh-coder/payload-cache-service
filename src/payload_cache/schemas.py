@@ -32,10 +32,12 @@ class PayloadRequest(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
-            "example": {
-                "list_1": ["first string", "second string", "third string"],
-                "list_2": ["other string", "another string", "last string"],
-            }
+            "examples": [
+                {
+                    "list_1": ["first string", "second string", "third string"],
+                    "list_2": ["other string", "another string", "last string"],
+                }
+            ]
         },
     )
 
