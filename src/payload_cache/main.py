@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Request, Response, status
@@ -20,15 +21,32 @@ from payload_cache.service import PayloadService
 from payload_cache.transformer import UpperCaseTransformer
 
 
-def get_session(request: Request) -> Iterator[Session]:
-    with request.app.state.session_factory() as session:
+@dataclass(frozen=True)
+class Resources:
+    """What the lifespan builds and the handlers use; ``app.state`` itself is untyped."""
+
+    session_factory: sessionmaker[Session]
+    transformer: UpperCaseTransformer
+
+
+def get_resources(request: Request) -> Resources:
+    resources: Resources = request.app.state.resources
+    return resources
+
+
+ResourcesDep = Annotated[Resources, Depends(get_resources)]
+
+
+def get_session(resources: ResourcesDep) -> Iterator[Session]:
+    with resources.session_factory() as session:
         yield session
 
 
-def get_service(
-    request: Request, session: Annotated[Session, Depends(get_session)]
-) -> PayloadService:
-    return PayloadService(session, request.app.state.transformer)
+SessionDep = Annotated[Session, Depends(get_session)]
+
+
+def get_service(resources: ResourcesDep, session: SessionDep) -> PayloadService:
+    return PayloadService(session, resources.transformer)
 
 
 ServiceDep = Annotated[PayloadService, Depends(get_service)]
@@ -108,7 +126,7 @@ def read_payload(
 
 
 @router.get("/health", include_in_schema=False)
-def health(session: Annotated[Session, Depends(get_session)]) -> dict[str, str]:
+def health(session: SessionDep) -> dict[str, str]:
     """Liveness and readiness in one: the database is the only dependency that can fail."""
     try:
         session.execute(text("SELECT 1"))
@@ -142,8 +160,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Shortcut: tables are created on start-up instead of through migrations. Fine
         # for a cache whose schema can be rebuilt, documented in the README.
         Base.metadata.create_all(engine)
-        app.state.session_factory = sessionmaker(engine, expire_on_commit=False)
-        app.state.transformer = UpperCaseTransformer(settings.transformer_latency_seconds)
+        app.state.resources = Resources(
+            session_factory=sessionmaker(engine, expire_on_commit=False),
+            transformer=UpperCaseTransformer(settings.transformer_latency_seconds),
+        )
         yield
         engine.dispose()
 

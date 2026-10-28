@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -27,14 +28,14 @@ def test_create_then_read_returns_the_documented_output(client: TestClient) -> N
 
 def test_reposting_the_same_request_reuses_the_id(client: TestClient, app: FastAPI) -> None:
     first = client.post("/payload", json=SAMPLE_REQUEST)
-    calls_after_first = app.state.transformer.calls
+    calls_after_first = app.state.resources.transformer.calls
 
     second = client.post("/payload", json=SAMPLE_REQUEST)
 
     assert second.status_code == 200
     assert second.json()["id"] == first.json()["id"]
     assert second.headers["Location"] == first.headers["Location"]
-    assert app.state.transformer.calls == calls_after_first
+    assert app.state.resources.transformer.calls == calls_after_first
 
 
 def test_location_follows_the_root_path_of_a_proxy(app: FastAPI) -> None:
@@ -61,7 +62,7 @@ def test_only_new_strings_reach_the_transformer(client: TestClient, app: FastAPI
     response = client.post("/payload", json=overlapping)
 
     assert response.status_code == 201
-    assert app.state.transformer.calls == 6 + 2
+    assert app.state.resources.transformer.calls == 6 + 2
     assert client.get(response.headers["Location"]).json() == {
         "output": "FIRST STRING, LAST STRING, NEW ONE, NEW TWO"
     }
@@ -152,7 +153,8 @@ def test_health_is_503_when_the_database_is_unreachable(
     client: TestClient, app: FastAPI, tmp_path: Path
 ) -> None:
     # A directory is not a database file, so every connection attempt fails.
-    app.state.session_factory = sessionmaker(make_engine(f"sqlite:///{tmp_path}"))
+    broken = sessionmaker(make_engine(f"sqlite:///{tmp_path}"))
+    app.state.resources = replace(app.state.resources, session_factory=broken)
 
     response = client.get("/health")
 

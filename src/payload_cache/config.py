@@ -10,8 +10,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # SQLite by default so the service runs with zero infrastructure. Any SQLAlchemy URL
-    # works (PostgreSQL included) because the data layer sticks to portable constructs.
+    # SQLite by default so the service runs with zero infrastructure; PostgreSQL is the
+    # other supported backend (see db.py, which refuses anything else at start-up).
     database_url: str = "sqlite:///./data/payload_cache.db"
 
     # Echo SQL statements; handy when verifying the caching behaviour by hand.
