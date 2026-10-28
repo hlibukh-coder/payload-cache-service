@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -31,8 +32,14 @@ def sample_request() -> PayloadRequest:
 @pytest.fixture
 def database_url(tmp_path: Path) -> str:
     # A file-backed database rather than ":memory:" so tests go through the same connection
-    # handling as production, including several sessions open at once.
-    return f"sqlite:///{tmp_path / 'test.db'}"
+    # handling as production, including several sessions open at once. TEST_DATABASE_URL
+    # points the same suite at another backend (PostgreSQL, see README).
+    url = os.environ.get("TEST_DATABASE_URL") or f"sqlite:///{tmp_path / 'test.db'}"
+    # Every test starts from an empty schema; matters when the database is a shared server.
+    engine = make_engine(url)
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+    return url
 
 
 @pytest.fixture

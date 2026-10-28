@@ -1,5 +1,5 @@
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from payload_cache.cache import LOOKUP_CHUNK_SIZE, TransformCache
 from payload_cache.models import TransformedString
@@ -37,7 +37,9 @@ def test_cached_values_do_not_call_the_transformer_again(
     assert transformer.calls == 3  # a, b from the first batch; only c now
 
 
-def test_cache_survives_across_sessions(session_factory, transformer: UpperCaseTransformer) -> None:
+def test_cache_survives_across_sessions(
+    session_factory: sessionmaker[Session], transformer: UpperCaseTransformer
+) -> None:
     with session_factory() as first:
         TransformCache(first, transformer).transform_many(["a"])
         first.commit()
