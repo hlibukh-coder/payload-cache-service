@@ -198,6 +198,17 @@ TEST_DATABASE_URL=postgresql+psycopg://payload:payload@localhost:5433/payload py
   instead of failing with a 500 half-way through.
 - **No authentication or rate limiting.** Out of scope for the exercise; both belong in the
   reverse proxy or gateway in front of a service like this.
+- **Dependencies locked for the image, ranged for the package.** `pyproject.toml` declares
+  compatibility floors, as a library would; `requirements.lock` pins what the image installs
+  (frozen inside the same `python:3.13` image), so rebuilding a commit gives the same image
+  and "the tests passed" says something about what ships. Regenerate it after changing the
+  dependencies:
+
+  ```bash
+  docker run --rm -v "$PWD:/src:ro" python:3.13.18-slim sh -c \
+    "pip install -q '/src[postgres]' && pip freeze --exclude payload-cache-service" > requirements.lock
+  ```
+
 - **Single-stage Docker image.** All dependencies ship as wheels, so a build stage would add
   complexity without shrinking the image. The dependency layer is installed before the
   source is copied so code changes rebuild quickly.
@@ -224,5 +235,6 @@ src/payload_cache/
   config.py       service settings
   cli.py          cache-cli
 tests/            unit and integration tests (pytest)
+requirements.lock pinned dependencies for the Docker image
 Dockerfile, docker-compose.yml
 ```

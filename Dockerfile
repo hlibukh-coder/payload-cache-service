@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-FROM python:3.13-slim
+# Patch-level tag, so two builds of the same commit get the same interpreter.
+FROM python:3.13.18-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -10,13 +11,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Dependencies first, with only the metadata the build backend needs, so editing source
-# code does not invalidate this (slow) layer. The PostgreSQL driver is included so the same
-# image works with either backend; DATABASE_URL picks one.
-COPY pyproject.toml README.md ./
-COPY src/payload_cache/__init__.py src/payload_cache/__init__.py
-RUN pip install ".[postgres]"
+# Dependencies first, from the lock file, so editing source code does not invalidate this
+# (slow) layer and every build installs exactly the versions the tests ran against. The lock
+# includes the PostgreSQL driver so the same image works with either backend; DATABASE_URL
+# picks one. README.md explains how to regenerate it.
+COPY requirements.lock ./
+RUN pip install -r requirements.lock
 
+COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install --no-deps .
 
