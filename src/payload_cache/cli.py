@@ -11,7 +11,7 @@ import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, TypedDict
 
 import httpx2
 from pydantic import (
@@ -30,9 +30,19 @@ from payload_cache.schemas import PayloadCreated, PayloadRead, PayloadRequest
 # Conventional spelling for "use stdin / stdout instead of a file".
 STDIO = "-"
 
+# Pydantic Settings prints a type alias by its name as the argparse metavar, so the help
+# reads "-H URL" rather than "-H AnyHttpUrl".
+type URL = AnyHttpUrl
+type N = PositiveInt
+type FILE = str
+type JSON = str
+
 
 class CliSettings(BaseSettings):
-    """Send a payload request to the service, read the result back and report timings."""
+    """Send a payload request to the service, read the result back and report timings.
+
+    Exactly one of -i/--input or -j/--json must be given.
+    """
 
     model_config = SettingsConfigDict(
         cli_prog_name="cache-cli",
@@ -43,27 +53,27 @@ class CliSettings(BaseSettings):
     )
 
     # The task lists -h for both --host and --help; -h is universally help, so host gets -H.
-    host: AnyHttpUrl = Field(
+    host: URL = Field(
         default=AnyHttpUrl("http://localhost:8000"),
         validation_alias=AliasChoices("H", "host"),
         description="Base URL of the service.",
     )
-    repeat: PositiveInt = Field(
+    repeat: N = Field(
         default=1,
         validation_alias=AliasChoices("r", "repeat"),
         description="How many times to send the request; repeats should be served from cache.",
     )
-    input: str | None = Field(
+    input: FILE | None = Field(
         default=None,
         validation_alias=AliasChoices("i", "input"),
-        description="File holding the JSON request, or '-' for stdin.",
+        description="File holding the JSON request, or '-' for stdin (use either this or --json).",
     )
-    json_body: str | None = Field(
+    json_body: JSON | None = Field(
         default=None,
         validation_alias=AliasChoices("j", "json"),
-        description="The JSON request given inline.",
+        description="The JSON request given inline (use either this or --input).",
     )
-    output: str = Field(
+    output: FILE = Field(
         default=STDIO,
         validation_alias=AliasChoices("o", "output"),
         description="File to write the report to, or '-' for stdout.",
@@ -123,16 +133,33 @@ def load_request(settings: CliSettings, stdin: IO[str]) -> PayloadRequest:
     return PayloadRequest.model_validate_json(raw)
 
 
-def run(client: httpx2.Client, request: PayloadRequest, repeat: int) -> dict[str, Any]:
+class RunRecord(TypedDict):
+    iteration: int
+    id: str
+    status: int
+    post_ms: float
+    get_ms: float
+
+
+class Report(TypedDict):
+    id: str
+    output: str
+    consistent: bool
+    runs: list[RunRecord]
+
+
+def run(client: httpx2.Client, request: PayloadRequest, repeat: int) -> Report:
     """POST the request ``repeat`` times, read each payload back and report what happened.
 
     The report records the status of every POST (201 the first time, 200 once the payload
     is known) and the time each call took, which is how the caching is observed from the
     outside.
     """
-    runs: list[dict[str, Any]] = []
-    ids: set[str] = set()
-    outputs: set[str] = set()
+    # One throwaway call so that iteration 1 measures the service, not the TCP handshake.
+    # Its status is irrelevant; a connection failure propagates like any other.
+    client.get("/health")
+    runs: list[RunRecord] = []
+    outputs: list[str] = []
     for iteration in range(1, repeat + 1):
         started = time.perf_counter()
         created = client.post("/payload", json=request.model_dump())
@@ -147,26 +174,27 @@ def run(client: httpx2.Client, request: PayloadRequest, repeat: int) -> dict[str
         read.raise_for_status()
         get_ms = (time.perf_counter() - started) * 1000
 
-        ids.add(payload_id)
-        outputs.add(PayloadRead.model_validate_json(read.content).output)
+        outputs.append(PayloadRead.model_validate_json(read.content).output)
         runs.append(
             {
                 "iteration": iteration,
+                "id": payload_id,
                 "status": created.status_code,
                 "post_ms": round(post_ms, 2),
                 "get_ms": round(get_ms, 2),
             }
         )
     return {
-        "id": next(iter(ids)),
-        "output": next(iter(outputs)),
-        # A test tool should notice if the service ever disagrees with itself.
-        "consistent": len(ids) == 1 and len(outputs) == 1,
+        "id": runs[0]["id"],
+        "output": outputs[0],
+        # A test tool should notice if the service ever disagrees with itself; the per-run
+        # ids above show where.
+        "consistent": len({item["id"] for item in runs}) == 1 and len(set(outputs)) == 1,
         "runs": runs,
     }
 
 
-def write_report(report: dict[str, Any], destination: str, stdout: IO[str]) -> None:
+def write_report(report: Report, destination: str, stdout: IO[str]) -> None:
     text = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
     if destination == STDIO:
         stdout.write(text)
@@ -179,17 +207,28 @@ def make_client(base_url: str) -> httpx2.Client:
     return httpx2.Client(base_url=base_url, timeout=30.0)
 
 
+def _flag_labels() -> dict[str, str]:
+    """``{"r": "-r/--repeat", "repeat": "-r/--repeat", ...}`` from the field aliases.
+
+    Pydantic Settings reports an argument error under the field's first alias whichever
+    spelling was typed, so the message names both, as argparse's own errors do.
+    """
+    labels: dict[str, str] = {}
+    for field in CliSettings.model_fields.values():
+        if isinstance(field.validation_alias, AliasChoices):
+            names = [str(choice) for choice in field.validation_alias.choices]
+            label = "/".join(("-" if len(name) == 1 else "--") + name for name in names)
+            labels.update(dict.fromkeys(names, label))
+    return labels
+
+
 def _describe(error: ValidationError, *, as_flags: bool) -> str:
-    """One line per problem. Argument errors are located by the flag as it was typed."""
+    """One line per problem, located by flag (arguments) or by JSON path (request body)."""
+    labels = _flag_labels() if as_flags else {}
     lines = []
     for item in error.errors():
         parts = [str(part) for part in item["loc"]]
-        if not parts:
-            where = ""
-        elif as_flags:
-            where = ("-" if len(parts[0]) == 1 else "--") + parts[0]
-        else:
-            where = ".".join(parts)
+        where = labels.get(parts[0], parts[0]) if as_flags and parts else ".".join(parts)
         lines.append(f"  {where}: {item['msg']}" if where else f"  {item['msg']}")
     return "\n".join(lines)
 
@@ -238,4 +277,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OSError as error:
         print(f"cache-cli: cannot write {settings.output}: {error.strerror}", file=sys.stderr)
         return 2
-    return 0 if report["consistent"] else 1
+    if not report["consistent"]:
+        print(
+            "cache-cli: the service disagreed with itself across repeats (see the ids per run)",
+            file=sys.stderr,
+        )
+        return 1
+    return 0

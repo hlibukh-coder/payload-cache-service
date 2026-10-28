@@ -104,8 +104,11 @@ transformer call, the following ones answer `200` from cache.
 cache-cli [-H|--host URL] [-r|--repeat N] [-i|--input FILE|-] [-j|--json JSON] [-o|--output FILE|-] [-h|--help]
 ```
 
+Exactly one of `--input`/`--json` is required; `--help` prints the full description.
+
 ```bash
-cache-cli --json '{"list_1": ["first string", "second string"], "list_2": ["other string", "last string"]}' --repeat 3
+cache-cli --repeat 3 --json '{"list_1": ["first string", "second string", "third string"],
+                             "list_2": ["other string", "another string", "last string"]}'
 cat request.json | cache-cli --input - --output report.json
 ```
 
@@ -115,12 +118,16 @@ cat request.json | cache-cli --input - --output report.json
   "output": "FIRST STRING, OTHER STRING, SECOND STRING, ANOTHER STRING, THIRD STRING, LAST STRING",
   "consistent": true,
   "runs": [
-    {"iteration": 1, "status": 201, "post_ms": 347.26, "get_ms": 3.3},
-    {"iteration": 2, "status": 200, "post_ms": 2.32, "get_ms": 1.58},
-    {"iteration": 3, "status": 200, "post_ms": 1.59, "get_ms": 1.55}
+    {"iteration": 1, "id": "831db673…", "status": 201, "post_ms": 347.26, "get_ms": 3.3},
+    {"iteration": 2, "id": "831db673…", "status": 200, "post_ms": 2.32, "get_ms": 1.58},
+    {"iteration": 3, "id": "831db673…", "status": 200, "post_ms": 1.59, "get_ms": 1.55}
   ]
 }
 ```
+
+(ids shortened; the run was made with `TRANSFORMER_LATENCY_SECONDS=0.05`, so the six
+transformer calls of the first POST are visible.) A throwaway `GET /health` warms the
+connection first, so iteration 1 measures the service rather than the TCP handshake.
 
 Argument parsing is done with Pydantic Settings (`cli.py`): flags are validated and
 normalised (`--host` must be an HTTP URL, `--repeat` a positive integer, `--input` an

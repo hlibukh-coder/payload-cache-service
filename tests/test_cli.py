@@ -52,6 +52,15 @@ def test_lower_case_h_is_help_not_host(capsys: pytest.CaptureFixture[str]) -> No
     assert "-H, --host" in capsys.readouterr().out
 
 
+def test_help_reads_like_the_task_statement(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        parse("--help")
+
+    out = capsys.readouterr().out
+    assert "[-H URL] [-r N] [-i FILE] [-j JSON] [-o FILE]" in out
+    assert "Exactly one of -i/--input or -j/--json" in out
+
+
 def test_repeat_must_be_positive() -> None:
     with pytest.raises(ValidationError, match="greater than 0"):
         parse("-j", "{}", "-r", "0")
@@ -88,7 +97,8 @@ def test_output_location_is_checked_up_front(tmp_path: Path) -> None:
 
 
 def test_environment_variables_are_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HOST", "http://from-env:1")
+    # Spelled exactly like the aliases, which is what the (disabled) env source would read.
+    monkeypatch.setenv("host", "http://from-env:1")
     monkeypatch.setenv("repeat", "7")
 
     settings = parse("-j", "{}")
@@ -151,13 +161,14 @@ def test_run_reports_id_reuse_across_repeats(client: TestClient) -> None:
     assert report["output"] == SAMPLE_OUTPUT
     assert report["consistent"] is True
     assert [item["status"] for item in report["runs"]] == [201, 200, 200]
+    assert all(item["id"] == report["id"] for item in report["runs"])
     assert all(item["post_ms"] >= 0 and item["get_ms"] >= 0 for item in report["runs"])
 
 
 def test_main_writes_report_to_file(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(cli, "make_client", lambda base_url: TestClient(app))
+    monkeypatch.setattr(cli, "make_client", lambda base_url: TestClient(app, base_url=base_url))
     report_file = tmp_path / "report.json"
 
     exit_code = main(["-j", SAMPLE_JSON, "-r", "2", "-o", str(report_file)])
@@ -171,7 +182,7 @@ def test_main_writes_report_to_file(
 def test_main_reads_stdin_and_writes_stdout(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli, "make_client", lambda base_url: TestClient(app))
+    monkeypatch.setattr(cli, "make_client", lambda base_url: TestClient(app, base_url=base_url))
     monkeypatch.setattr("sys.stdin", io.StringIO(SAMPLE_JSON))
 
     exit_code = main(["-i", "-"])
@@ -181,8 +192,11 @@ def test_main_reads_stdin_and_writes_stdout(
 
 
 def test_main_rejects_bad_arguments(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["-j", "{}", "-r", "0"]) == 2
-    assert "invalid arguments" in capsys.readouterr().err
+    assert main(["-j", "{}", "--repeat", "0"]) == 2
+
+    err = capsys.readouterr().err
+    assert "invalid arguments" in err
+    assert "-r/--repeat: Input should be greater than 0" in err
 
 
 def test_main_rejects_bad_request(capsys: pytest.CaptureFixture[str]) -> None:
@@ -206,7 +220,9 @@ def test_main_reports_unexpected_response_bodies(
         return httpx2.Response(200, text="<html>Welcome</html>")
 
     monkeypatch.setattr(
-        cli, "make_client", lambda base_url: httpx2.Client(transport=httpx2.MockTransport(html))
+        cli,
+        "make_client",
+        lambda base_url: httpx2.Client(base_url=base_url, transport=httpx2.MockTransport(html)),
     )
 
     assert main(["-j", SAMPLE_JSON]) == 1
@@ -222,7 +238,7 @@ def test_main_reports_http_errors(
     def unavailable() -> None:
         raise HTTPException(503, detail="maintenance")
 
-    monkeypatch.setattr(cli, "make_client", lambda base_url: TestClient(broken))
+    monkeypatch.setattr(cli, "make_client", lambda base_url: TestClient(broken, base_url=base_url))
 
     assert main(["-j", SAMPLE_JSON]) == 1
     assert "503" in capsys.readouterr().err
@@ -232,10 +248,14 @@ def test_main_reports_connection_errors(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     def refuse(request: httpx2.Request) -> httpx2.Response:
+        # The URL proves --host reached the client and was joined with the endpoint path.
+        assert str(request.url).startswith("http://nowhere:1/")
         raise httpx2.ConnectError("connection refused", request=request)
 
     monkeypatch.setattr(
-        cli, "make_client", lambda base_url: httpx2.Client(transport=httpx2.MockTransport(refuse))
+        cli,
+        "make_client",
+        lambda base_url: httpx2.Client(base_url=base_url, transport=httpx2.MockTransport(refuse)),
     )
 
     assert main(["-j", SAMPLE_JSON, "-H", "http://nowhere:1"]) == 1
