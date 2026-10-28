@@ -1,5 +1,7 @@
 import io
 import json
+import os
+import threading
 from pathlib import Path
 
 import httpx2
@@ -140,6 +142,25 @@ def test_request_from_stdin() -> None:
     assert request.list_2 == SAMPLE_REQUEST["list_2"]
 
 
+def test_request_from_stdin_may_start_with_a_bom() -> None:
+    request = load_request(parse("-i", "-"), io.StringIO("\ufeff" + SAMPLE_JSON))
+
+    assert request.list_1 == SAMPLE_REQUEST["list_1"]
+
+
+def test_request_from_a_pipe(tmp_path: Path) -> None:
+    # `cache-cli -i <(generate-request)` hands over a path that exists but is not a file.
+    fifo = tmp_path / "request.fifo"
+    os.mkfifo(fifo)
+    writer = threading.Thread(target=fifo.write_text, args=(SAMPLE_JSON,))
+    writer.start()
+
+    request = load_request(parse("-i", str(fifo)), io.StringIO())
+
+    writer.join()
+    assert request.list_1 == SAMPLE_REQUEST["list_1"]
+
+
 def test_invalid_json_is_rejected() -> None:
     with pytest.raises(ValidationError):
         load_request(parse("-j", "{not json"), io.StringIO())
@@ -202,6 +223,13 @@ def test_main_rejects_bad_arguments(capsys: pytest.CaptureFixture[str]) -> None:
 def test_main_rejects_bad_request(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["-j", '{"list_1": ["a"], "list_2": ["b", "c"]}']) == 2
     assert "same length" in capsys.readouterr().err
+
+
+def test_main_reports_a_directory_given_as_input(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["-i", str(tmp_path)]) == 2
+    assert "cannot read" in capsys.readouterr().err
 
 
 def test_main_rejects_non_utf8_input(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

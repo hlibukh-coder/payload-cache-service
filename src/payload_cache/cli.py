@@ -95,15 +95,19 @@ class CliSettings(BaseSettings):
     @field_validator("input")
     @classmethod
     def _input_file_must_exist(cls, value: str | None) -> str | None:
-        if value is not None and value != STDIO and not Path(value).is_file():
+        # exists() rather than is_file(): a pipe or process substitution is a fine input too.
+        # A path that exists but cannot be read is reported when it is read (see main()).
+        if value is not None and value != STDIO and not Path(value).exists():
             raise ValueError(f"input file not found: {value}")
         return value
 
     @field_validator("output")
     @classmethod
-    def _output_location_must_be_writable(cls, value: str) -> str:
-        # Checked before any request is sent: finding out after the run that the report
-        # cannot be written would waste the run and hide the result.
+    def _output_location_must_exist(cls, value: str) -> str:
+        # The two cheap mistakes (a typo in the directory, pointing at a directory itself) are
+        # caught before any request is sent, so a run is not wasted on them. Permissions are
+        # deliberately not probed: os.access is only advisory, so a write that is still
+        # refused is reported after the run, as exit 2 (see main()).
         if value != STDIO:
             path = Path(value)
             if path.is_dir():
@@ -126,8 +130,10 @@ def load_request(settings: CliSettings, stdin: IO[str]) -> PayloadRequest:
         raw = stdin.read()
     else:
         assert settings.input is not None  # the model validator guarantees one source
-        # utf-8-sig also accepts the BOM some editors put in front of JSON files.
-        raw = Path(settings.input).read_text(encoding="utf-8-sig")
+        raw = Path(settings.input).read_text(encoding="utf-8")
+    # Some editors put a BOM in front of JSON files; accept it whether the file is named or
+    # piped in, so `cat request.json | cache-cli -i -` behaves like `-i request.json`.
+    raw = raw.removeprefix("\ufeff")
     # Validating here means a malformed request fails fast with a precise message rather
     # than as a 422 from the server.
     return PayloadRequest.model_validate_json(raw)
