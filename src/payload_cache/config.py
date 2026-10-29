@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     # other supported backend (see db.py, which refuses anything else at start-up).
     database_url: str = "sqlite:///./data/payload_cache.db"
 
+    # Bring the schema to the current revision on start-up (see schema.py). A deployment
+    # with several replicas turns this off and runs `payload-cache-migrate` once instead.
+    run_migrations: bool = True
+
     # Echo SQL statements; handy when verifying the caching behaviour by hand.
     echo_sql: bool = False
 

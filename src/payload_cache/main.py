@@ -18,7 +18,8 @@ from payload_cache.db import make_engine
 from payload_cache.logging_setup import configure_logging
 from payload_cache.metrics import render as render_metrics
 from payload_cache.middleware import RequestContextMiddleware
-from payload_cache.models import DIGEST_LENGTH, Base
+from payload_cache.models import DIGEST_LENGTH
+from payload_cache.schema import upgrade_to_head
 from payload_cache.schemas import PayloadCreated, PayloadRead, PayloadRequest
 from payload_cache.service import PayloadService
 from payload_cache.transformer import UpperCaseTransformer
@@ -197,9 +198,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = make_engine(settings.database_url, echo=settings.echo_sql)
-        # Shortcut: tables are created on start-up instead of through migrations. Fine
-        # for a cache whose schema can be rebuilt, documented in the README.
-        Base.metadata.create_all(engine)
+        if settings.run_migrations:
+            upgrade_to_head(engine)
         app.state.resources = Resources(
             session_factory=sessionmaker(engine, expire_on_commit=False),
             transformer=UpperCaseTransformer(settings.transformer_latency_seconds),

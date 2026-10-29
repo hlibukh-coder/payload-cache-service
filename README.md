@@ -76,6 +76,7 @@ Interactive docs: <http://localhost:8000/docs>. Configuration is read from the e
 | variable                      | default                              | purpose                                   |
 |-------------------------------|--------------------------------------|-------------------------------------------|
 | `DATABASE_URL`                | `sqlite:///./data/payload_cache.db`  | SQLAlchemy URL, SQLite (3.35+) or PostgreSQL |
+| `RUN_MIGRATIONS`              | `true`                               | migrate the schema on start-up (see below) |
 | `ECHO_SQL`                    | `false`                              | log every SQL statement                   |
 | `LOG_LEVEL`                   | `INFO`                               | threshold of the JSON log on stdout       |
 | `TRANSFORMER_LATENCY_SECONDS` | `0`                                  | simulate a slow external service          |
@@ -103,6 +104,29 @@ service keeps the SQLite `api` from starting alongside:
 ```bash
 docker compose --profile postgres up --build api-postgres   # API on :8001, PostgreSQL on :5433
 ```
+
+## Schema and migrations
+
+The schema is managed with Alembic. The revision scripts live inside the package
+(`src/payload_cache/migrations/`), so an installed application, the Docker image included,
+migrates its own database: on start-up by default (`schema.py` applies pending revisions in
+one transaction; nothing pending is a no-op), or as a release step:
+
+```bash
+payload-cache-migrate        # same DATABASE_URL as the service; then RUN_MIGRATIONS=false
+```
+
+Several replicas starting at once would race on Alembic's version table, which is why a
+deployment with more than one migrates once up front and tells the replicas not to. To
+change the schema, edit `models.py` and generate the revision from a checkout:
+
+```bash
+alembic revision --autogenerate -m "describe the change"   # alembic.ini points at the package
+alembic upgrade head
+```
+
+`test_migrations.py` compares the migrated schema with the models on every run, so a model
+change without a revision fails the suite instead of surfacing at deployment.
 
 ## Observability
 
@@ -220,8 +244,12 @@ The same checks run on GitHub Actions for every push and pull request
 - **Synchronous endpoints.** FastAPI runs `def` endpoints in a thread pool, which fits a
   synchronous SQLAlchemy session and keeps the code straightforward. Going async would only
   pay off once the transformer is a real network call.
-- **Schema via `create_all` on start-up, not migrations.** A deliberate shortcut: the data is
-  a cache that can be rebuilt. A real deployment would add Alembic.
+- **Migrations run by the application.** The scripts ship inside the package and the
+  application applies them, on start-up or through `payload-cache-migrate`, so there is no
+  separate deploy artefact to keep in step with the image. The first version of this service
+  created the tables with `create_all`; a cache can be rebuilt, but a column added later (an
+  eviction marker, a transformer version) could not have been, so the schema is versioned
+  from the start rather than retrofitted under pressure.
 - **No cache invalidation.** Cached results are assumed valid forever because the
   transformer is deterministic. If the transformer changed behaviour, its version would have
   to become part of both cache keys. Rows do carry `created_at`, so an age-based eviction job
@@ -287,6 +315,8 @@ src/payload_cache/
   transformer.py  the simulated external service
   models.py       ORM tables
   db.py           engine factory, dialect-specific ON CONFLICT insert
+  schema.py       Alembic upgrade at start-up, payload-cache-migrate
+  migrations/     Alembic environment and revision scripts (inside the package)
   schemas.py      API contracts, shared with the CLI
   hashing.py      canonical JSON + SHA-256
   config.py       service settings

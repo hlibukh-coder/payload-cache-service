@@ -17,6 +17,8 @@ dependencies = [
     "starlette>=1.6",
     "uvicorn[standard]>=0.30",
     "sqlalchemy>=2.0",
+    # Schema migrations; 1.13 is the first release typed for SQLAlchemy 2.0.
+    "alembic>=1.13",
     "pydantic>=2.7",
     "pydantic-settings>=2.10",
     # httpx's successor. Starlette's TestClient is built on it, so cache-cli and the tests
@@ -38,6 +40,7 @@ postgres = [
 
 [project.scripts]
 cache-cli = "payload_cache.cli:main"
+payload-cache-migrate = "payload_cache.schema:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/payload_cache"]

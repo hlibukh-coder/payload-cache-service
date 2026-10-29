@@ -5,12 +5,13 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import MetaData
 from sqlalchemy.orm import Session, sessionmaker
 
 from payload_cache.config import Settings
 from payload_cache.db import make_engine
 from payload_cache.main import create_app
-from payload_cache.models import Base
+from payload_cache.schema import upgrade_to_head
 from payload_cache.schemas import PayloadRequest
 from payload_cache.transformer import UpperCaseTransformer
 
@@ -39,9 +40,12 @@ def database_url(tmp_path: Path) -> str:
     # handling as production, including several sessions open at once. TEST_DATABASE_URL
     # points the same suite at another backend (PostgreSQL, see README).
     url = os.environ.get("TEST_DATABASE_URL") or f"sqlite:///{tmp_path / 'test.db'}"
-    # Every test starts from an empty schema; matters when the database is a shared server.
+    # Every test starts from an empty database; matters when it is a shared server. Reflected
+    # rather than Base.metadata, so Alembic's version table goes too and the migrations run.
     engine = make_engine(url)
-    Base.metadata.drop_all(engine)
+    everything = MetaData()
+    everything.reflect(engine)
+    everything.drop_all(engine)
     engine.dispose()
     return url
 
@@ -49,7 +53,8 @@ def database_url(tmp_path: Path) -> str:
 @pytest.fixture
 def session_factory(database_url: str) -> Iterator[sessionmaker[Session]]:
     engine = make_engine(database_url)
-    Base.metadata.create_all(engine)
+    # The migrated schema, not create_all: what the tests run against is what ships.
+    upgrade_to_head(engine)
     yield sessionmaker(engine, expire_on_commit=False)
     engine.dispose()
 
@@ -81,6 +86,6 @@ def app(database_url: str) -> FastAPI:
 
 @pytest.fixture
 def client(app: FastAPI) -> Iterator[TestClient]:
-    # Entering the context runs the lifespan, which creates the tables.
+    # Entering the context runs the lifespan, which migrates the database.
     with TestClient(app) as client:
         yield client
