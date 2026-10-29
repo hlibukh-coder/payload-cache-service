@@ -3,7 +3,7 @@
 [![CI](https://github.com/hlibukh-coder/payload-cache-service/actions/workflows/ci.yml/badge.svg)](https://github.com/hlibukh-coder/payload-cache-service/actions/workflows/ci.yml)
 
 A small FastAPI microservice that builds a payload from two lists of strings and caches
-the results of an (simulated) external "transformer" so the same work is never done twice.
+the results of a (simulated) external "transformer" so the same work is never done twice.
 It ships with `cache-cli`, a command-line tool for exercising the service.
 
 ```
@@ -24,9 +24,8 @@ GET  /payload/512df758...
    immediately (HTTP 200) without touching the transformer.
 3. **`cache.py`** – otherwise every distinct string from both lists is looked up in
    `transformed_strings` in one query (chunked for very large inputs), under keys that also
-   include the transformer version. Only strings that
-   were never seen are sent to the transformer, and their results are written back with
-   `INSERT ... ON CONFLICT DO NOTHING`.
+   include the transformer version. Only strings that were never seen are sent to the
+   transformer, and their results are written back with `INSERT ... ON CONFLICT DO NOTHING`.
 4. **`service.py`** – interleaves the transformed strings (`a1, b1, a2, b2, ...`), stores
    the payload under its id (again `ON CONFLICT DO NOTHING`, with `RETURNING` to tell
    whether this request or a concurrent one created it) and commits.
@@ -137,8 +136,9 @@ Several replicas starting at once would race on Alembic's version table, which i
 deployment with more than one migrates once up front and tells the replicas not to. A
 replica that is told not to still checks the revision at start-up and refuses to start
 against a database that is behind, naming the command to run, rather than failing on its
-first request with a missing-column error. To
-change the schema, edit `models.py` and generate the revision from a checkout:
+first request with a missing-column error.
+
+To change the schema, edit `models.py` and generate the revision from a checkout:
 
 ```bash
 alembic revision --autogenerate -m "describe the change"   # alembic.ini points at the package
@@ -232,10 +232,14 @@ pytest
 ruff check . && ruff format --check . && mypy
 ```
 
-- **Unit:** hashing, the transformer, output interleaving, id determinism, CLI parsing.
-- **Integration:** the cache and service against a real SQLite file, the documented example
-  through the HTTP API, concurrent identical requests, and `cache-cli` end to end against
-  the application.
+- **Unit:** hashing, the transformer, output interleaving, id determinism, cache keys, CLI
+  parsing, the JSON log formatter, the eviction sweep and its retry loop.
+- **Integration:** the cache and service against a real database, the documented example
+  through the HTTP API, concurrent identical and overlapping requests, request ids and
+  access-log lines, metric deltas through `/metrics`, migrations up and down (and the migrated
+  schema diffed against the models), a transformer-version bump across two application
+  start-ups, the TTL sweep running at start-up and on its timer, and `cache-cli` end to end
+  against the application.
 
 The suite runs against PostgreSQL as well, which exercises the PostgreSQL branch of the
 one dialect-specific statement and the deadlock regression test. It drops and recreates the
@@ -340,11 +344,14 @@ src/payload_cache/
   db.py           engine factory, dialect-specific ON CONFLICT insert
   schema.py       Alembic upgrade at start-up, payload-cache-migrate
   migrations/     Alembic environment and revision scripts (inside the package)
+  eviction.py     start-up purge of other transformer versions, TTL sweep
   schemas.py      API contracts, shared with the CLI
   hashing.py      canonical JSON + SHA-256
   config.py       service settings
   cli.py          cache-cli
 tests/            unit and integration tests (pytest)
+alembic.ini       points the alembic command line at the package's migrations
 requirements.lock pinned dependencies for the Docker image
 Dockerfile, docker-compose.yml
+.github/workflows/ci.yml
 ```
