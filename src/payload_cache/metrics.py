@@ -19,6 +19,11 @@ PAYLOADS = Counter(
     "generated before.",
     ["result"],
 )
+EVICTED_ROWS = Counter(
+    "payload_cache_evicted_rows_total",
+    "Cache rows removed by the clean-up in eviction.py, by table and reason.",
+    ["table", "reason"],
+)
 HTTP_REQUEST_DURATION = Histogram(
     "payload_cache_http_request_duration_seconds",
     "Time to answer a request, by route template and status.",

@@ -10,6 +10,8 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import Engine
 
 from payload_cache.config import Settings
@@ -44,6 +46,23 @@ def upgrade_to_head(engine: Engine) -> None:
     with engine.begin() as connection:
         config.attributes["connection"] = connection
         command.upgrade(config, "head")
+
+
+def ensure_at_head(engine: Engine) -> None:
+    """Refuse to serve against a database that is not at the current revision.
+
+    Used when start-up migrations are turned off: the first request would otherwise fail on a
+    missing table or column with an error that says nothing about the cause, and a replica
+    that was deployed before the release step ran would serve errors until restarted.
+    """
+    head = ScriptDirectory.from_config(alembic_config()).get_current_head()
+    with engine.connect() as connection:
+        current = MigrationContext.configure(connection).get_current_revision()
+    if current != head:
+        raise RuntimeError(
+            f"database schema is at revision {current or 'none'}, the application needs "
+            f"{head}: run payload-cache-migrate (or set RUN_MIGRATIONS=true)."
+        )
 
 
 def main() -> int:

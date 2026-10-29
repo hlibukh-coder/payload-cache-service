@@ -1,7 +1,7 @@
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from payload_cache.cache import LOOKUP_CHUNK_SIZE, TransformCache
+from payload_cache.cache import LOOKUP_CHUNK_SIZE, TransformCache, cache_key
 from payload_cache.models import TransformedString
 from payload_cache.transformer import UpperCaseTransformer
 
@@ -9,7 +9,7 @@ from payload_cache.transformer import UpperCaseTransformer
 def test_results_map_each_original_to_its_transformation(
     session: Session, transformer: UpperCaseTransformer
 ) -> None:
-    cache = TransformCache(session, transformer)
+    cache = TransformCache(session, transformer, "1")
 
     assert cache.transform_many(["a", "b"]) == {"a": "A", "b": "B"}
 
@@ -17,7 +17,7 @@ def test_results_map_each_original_to_its_transformation(
 def test_repeated_values_in_one_batch_cost_one_call(
     session: Session, transformer: UpperCaseTransformer
 ) -> None:
-    cache = TransformCache(session, transformer)
+    cache = TransformCache(session, transformer, "1")
 
     cache.transform_many(["a", "a", "b", "a"])
 
@@ -27,7 +27,7 @@ def test_repeated_values_in_one_batch_cost_one_call(
 def test_cached_values_do_not_call_the_transformer_again(
     session: Session, transformer: UpperCaseTransformer
 ) -> None:
-    cache = TransformCache(session, transformer)
+    cache = TransformCache(session, transformer, "1")
     cache.transform_many(["a", "b"])
     session.commit()
 
@@ -41,11 +41,11 @@ def test_cache_survives_across_sessions(
     session_factory: sessionmaker[Session], transformer: UpperCaseTransformer
 ) -> None:
     with session_factory() as first:
-        TransformCache(first, transformer).transform_many(["a"])
+        TransformCache(first, transformer, "1").transform_many(["a"])
         first.commit()
 
     with session_factory() as second:
-        TransformCache(second, transformer).transform_many(["a"])
+        TransformCache(second, transformer, "1").transform_many(["a"])
 
     assert transformer.calls == 1
 
@@ -64,7 +64,7 @@ def test_connection_is_released_while_the_transformer_runs(
             return value.upper()
 
     with session_factory() as session:
-        TransformCache(session, ObservingTransformer()).transform_many(["a", "b"])
+        TransformCache(session, ObservingTransformer(), "1").transform_many(["a", "b"])
         session.commit()
 
     assert checked_out_during_transform == [0, 0]
@@ -74,7 +74,7 @@ def test_lookups_larger_than_one_chunk_are_complete(
     session: Session, transformer: UpperCaseTransformer
 ) -> None:
     values = [f"value {i}" for i in range(LOOKUP_CHUNK_SIZE * 2 + 1)]
-    cache = TransformCache(session, transformer)
+    cache = TransformCache(session, transformer, "1")
     cache.transform_many(values)
     session.commit()
 
@@ -84,3 +84,24 @@ def test_lookups_larger_than_one_chunk_are_complete(
     assert transformer.calls == len(values)
     stored = session.scalar(select(func.count()).select_from(TransformedString))
     assert stored == len(values)
+
+
+def test_a_different_transformer_version_does_not_share_cached_results(
+    session: Session, transformer: UpperCaseTransformer
+) -> None:
+    # Committing after each call is the service's contract (transform_many ends the open
+    # transaction before calling the transformer, which would discard unflushed writes).
+    TransformCache(session, transformer, "1").transform_many(["a", "b"])
+    session.commit()
+    assert transformer.calls == 2
+    # Version 2 may answer differently, so its results are computed and stored apart.
+    TransformCache(session, transformer, "2").transform_many(["a", "b"])
+    session.commit()
+    assert transformer.calls == 4
+    TransformCache(session, transformer, "1").transform_many(["a", "b"])
+    assert transformer.calls == 4
+
+
+def test_cache_keys_differ_by_version_and_are_digests() -> None:
+    assert cache_key("a", "1") != cache_key("a", "2")
+    assert len(cache_key("a", "1")) == 64

@@ -66,12 +66,28 @@ def test_the_application_migrates_on_start_up(database_url: str, engine: Engine)
 
 
 def test_start_up_migrations_can_be_turned_off(database_url: str, engine: Engine) -> None:
-    # The deployment then runs payload-cache-migrate itself; the service only connects.
+    # The deployment ran payload-cache-migrate as its release step; the service only checks.
+    schema.upgrade_to_head(engine)
     app = create_app(Settings(database_url=database_url, run_migrations=False, _env_file=None))
     with TestClient(app) as client:
-        assert client.get("/health").status_code == 200
-    assert current_revision(engine) is None
-    assert not TABLES & set(inspect(engine).get_table_names())
+        assert client.post("/payload", json=SAMPLE_REQUEST).status_code == 201
+    assert current_revision(engine) == head_revision()
+
+
+@pytest.mark.parametrize("prepare", ["empty", "one revision behind"])
+def test_without_start_up_migrations_a_database_behind_head_is_refused(
+    database_url: str, engine: Engine, prepare: str
+) -> None:
+    if prepare == "one revision behind":
+        schema.upgrade_to_head(engine)
+        config = schema.alembic_config()
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.downgrade(config, "-1")
+    app = create_app(Settings(database_url=database_url, run_migrations=False, _env_file=None))
+    # Refused at start-up, naming the fix, rather than failing on the first request.
+    with pytest.raises(RuntimeError, match="payload-cache-migrate"), TestClient(app):
+        pass
 
 
 def test_migrate_command_brings_the_database_to_head(

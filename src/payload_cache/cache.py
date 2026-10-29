@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from payload_cache.db import insert_or_ignore
-from payload_cache.hashing import sha256_hex
+from payload_cache.hashing import canonical_json, sha256_hex
 from payload_cache.metrics import TRANSFORM_STRINGS
 from payload_cache.models import TransformedString
 from payload_cache.transformer import Transformer
@@ -22,10 +22,22 @@ from payload_cache.transformer import Transformer
 LOOKUP_CHUNK_SIZE = 500
 
 
+def cache_key(value: str, transformer_version: str) -> str:
+    """Key of a cached result: the input string and the transformer version that produced it.
+
+    A different version may answer the same string differently, so its results live under
+    different keys and a bump makes every old row a miss instead of a wrong answer.
+    """
+    return sha256_hex(canonical_json([transformer_version, value]))
+
+
 class TransformCache:
-    def __init__(self, session: Session, transformer: Transformer) -> None:
+    def __init__(
+        self, session: Session, transformer: Transformer, transformer_version: str
+    ) -> None:
         self._session = session
         self._transformer = transformer
+        self._version = transformer_version
 
     def transform_many(self, values: Iterable[str]) -> dict[str, str]:
         """Return ``{original: transformed}`` for every distinct value, filling misses."""
@@ -47,7 +59,7 @@ class TransformCache:
         return results
 
     def _lookup(self, values: Sequence[str]) -> dict[str, str]:
-        key_to_value = {sha256_hex(value): value for value in values}
+        key_to_value = {cache_key(value, self._version): value for value in values}
         keys = list(key_to_value)
         found: dict[str, str] = {}
         for start in range(0, len(keys), LOOKUP_CHUNK_SIZE):
@@ -64,7 +76,12 @@ class TransformCache:
     def _fill(self, misses: Sequence[str]) -> dict[str, str]:
         transformed = {value: self._transformer.transform(value) for value in misses}
         rows = [
-            {"key": sha256_hex(value), "original": value, "transformed": result}
+            {
+                "key": cache_key(value, self._version),
+                "original": value,
+                "transformed": result,
+                "transformer_version": self._version,
+            }
             for value, result in transformed.items()
         ]
         # A concurrent request may have stored some of these strings since our lookup. The

@@ -13,6 +13,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Length of a hex-encoded SHA-256 digest.
 DIGEST_LENGTH = 64
+# Bound on the configured transformer version (config.py validates against it).
+TRANSFORMER_VERSION_LENGTH = 32
 
 
 def _utcnow() -> datetime:
@@ -33,6 +35,9 @@ class TransformedString(Base):
     # inspectable when debugging what the transformer was asked for.
     original: Mapped[str] = mapped_column(Text)
     transformed: Mapped[str] = mapped_column(Text)
+    # Which transformer produced the row. The version is also hashed into the key, so a row
+    # of another version is never looked up; the column is what lets such rows be purged.
+    transformer_version: Mapped[str] = mapped_column(String(TRANSFORMER_VERSION_LENGTH))
     # Not consulted when serving requests. Recorded now so that an age-based eviction job, or
     # someone inspecting the table, can tell how old a row is without a migration later (the
     # cache is otherwise unbounded; see "No cache invalidation" in the README).
@@ -40,15 +45,19 @@ class TransformedString(Base):
 
 
 class Payload(Base):
-    """A generated payload, keyed by the digest of the request that produced it.
+    """A generated payload, keyed by the digest of the request and transformer version.
 
     Deriving the identifier from the request means re-posting the same lists resolves to
-    this row directly, without consulting the transformer at all.
+    this row directly, without consulting the transformer at all. Including the transformer
+    version keeps a payload immutable: a bump yields new identifiers rather than new content
+    under an old one.
     """
 
     __tablename__ = "payloads"
 
     id: Mapped[str] = mapped_column(String(DIGEST_LENGTH), primary_key=True)
     output: Mapped[str] = mapped_column(Text)
+    # Same purpose as TransformedString.transformer_version.
+    transformer_version: Mapped[str] = mapped_column(String(TRANSFORMER_VERSION_LENGTH))
     # Same purpose as TransformedString.created_at.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

@@ -15,11 +15,12 @@ from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from payload_cache.config import Settings
 from payload_cache.db import make_engine
+from payload_cache.eviction import purge_other_versions
 from payload_cache.logging_setup import configure_logging
 from payload_cache.metrics import render as render_metrics
 from payload_cache.middleware import RequestContextMiddleware
 from payload_cache.models import DIGEST_LENGTH
-from payload_cache.schema import upgrade_to_head
+from payload_cache.schema import ensure_at_head, upgrade_to_head
 from payload_cache.schemas import PayloadCreated, PayloadRead, PayloadRequest
 from payload_cache.service import PayloadService
 from payload_cache.transformer import UpperCaseTransformer
@@ -31,6 +32,7 @@ class Resources:
 
     session_factory: sessionmaker[Session]
     transformer: UpperCaseTransformer
+    transformer_version: str
 
 
 def get_resources(request: Request) -> Resources:
@@ -50,7 +52,7 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 
 def get_service(resources: ResourcesDep, session: SessionDep) -> PayloadService:
-    return PayloadService(session, resources.transformer)
+    return PayloadService(session, resources.transformer, resources.transformer_version)
 
 
 ServiceDep = Annotated[PayloadService, Depends(get_service)]
@@ -200,9 +202,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         engine = make_engine(settings.database_url, echo=settings.echo_sql)
         if settings.run_migrations:
             upgrade_to_head(engine)
+        else:
+            ensure_at_head(engine)
+        session_factory = sessionmaker(engine, expire_on_commit=False)
+        # Rows another transformer version produced can never be served again (the version is
+        # in their keys); the version only changes with the configuration, so start-up is the
+        # one moment they can appear and the one place they are removed.
+        purge_other_versions(session_factory, settings.transformer_version)
         app.state.resources = Resources(
-            session_factory=sessionmaker(engine, expire_on_commit=False),
+            session_factory=session_factory,
             transformer=UpperCaseTransformer(settings.transformer_latency_seconds),
+            transformer_version=settings.transformer_version,
         )
         yield
         engine.dispose()

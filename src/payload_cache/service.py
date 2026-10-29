@@ -22,9 +22,20 @@ class CreateResult:
     created: bool
 
 
-def payload_id_for(request: PayloadRequest) -> str:
-    """Deterministic identifier: equal lists in equal order always yield the same id."""
-    return sha256_hex(canonical_json(request.model_dump()))
+def payload_id_for(request: PayloadRequest, transformer_version: str) -> str:
+    """Deterministic identifier: equal lists in equal order, under one transformer version,
+    always yield the same id.
+
+    The version is part of it because the output depends on it. After a bump, the same lists
+    get a new id and a freshly generated payload; the old payload stays intact under the old
+    id until it is purged, rather than being overwritten with output a different transformer
+    produced.
+    """
+    return sha256_hex(
+        canonical_json(
+            {"request": request.model_dump(), "transformer_version": transformer_version}
+        )
+    )
 
 
 def interleave(first: Sequence[str], second: Sequence[str]) -> str:
@@ -33,12 +44,15 @@ def interleave(first: Sequence[str], second: Sequence[str]) -> str:
 
 
 class PayloadService:
-    def __init__(self, session: Session, transformer: Transformer) -> None:
+    def __init__(
+        self, session: Session, transformer: Transformer, transformer_version: str
+    ) -> None:
         self._session = session
-        self._cache = TransformCache(session, transformer)
+        self._version = transformer_version
+        self._cache = TransformCache(session, transformer, transformer_version)
 
     def create(self, request: PayloadRequest) -> CreateResult:
-        payload_id = payload_id_for(request)
+        payload_id = payload_id_for(request, self._version)
         # Seen this exact request before: reuse the id without touching the transformer.
         # Only the key is read; the stored output (megabytes at the schema bounds) is not
         # needed to answer.
@@ -55,7 +69,7 @@ class PayloadService:
         # stored output is the same either way, so only the response status differs.
         inserted_id = self._session.execute(
             insert_or_ignore(self._session, Payload)
-            .values(id=payload_id, output=output)
+            .values(id=payload_id, output=output, transformer_version=self._version)
             .returning(Payload.id)
         ).scalar_one_or_none()
         self._session.commit()

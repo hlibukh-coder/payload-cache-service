@@ -24,12 +24,12 @@ def test_interleave_rejects_lists_of_different_length() -> None:
 def test_payload_id_is_deterministic(sample_request: PayloadRequest) -> None:
     again = PayloadRequest.model_validate(sample_request.model_dump())
 
-    assert payload_id_for(sample_request) == payload_id_for(again)
-    assert len(payload_id_for(sample_request)) == 64
+    assert payload_id_for(sample_request, "1") == payload_id_for(again, "1")
+    assert len(payload_id_for(sample_request, "1")) == 64
 
 
 def test_sample_request_has_the_documented_id(sample_request: PayloadRequest) -> None:
-    assert payload_id_for(sample_request) == SAMPLE_ID
+    assert payload_id_for(sample_request, "1") == SAMPLE_ID
 
 
 def test_payload_id_depends_on_order_and_on_which_list_holds_what() -> None:
@@ -37,13 +37,22 @@ def test_payload_id_depends_on_order_and_on_which_list_holds_what() -> None:
     reordered = PayloadRequest(list_1=["b", "a"], list_2=["d", "c"])
     swapped = PayloadRequest(list_1=["c", "d"], list_2=["a", "b"])
 
-    assert len({payload_id_for(base), payload_id_for(reordered), payload_id_for(swapped)}) == 3
+    assert (
+        len(
+            {
+                payload_id_for(base, "1"),
+                payload_id_for(reordered, "1"),
+                payload_id_for(swapped, "1"),
+            }
+        )
+        == 3
+    )
 
 
 def test_create_then_read_round_trip(
     session: Session, transformer: UpperCaseTransformer, sample_request: PayloadRequest
 ) -> None:
-    service = PayloadService(session, transformer)
+    service = PayloadService(session, transformer, "1")
 
     result = service.create(sample_request)
 
@@ -55,7 +64,7 @@ def test_create_then_read_round_trip(
 def test_identical_request_reuses_id_without_transforming(
     session: Session, transformer: UpperCaseTransformer, sample_request: PayloadRequest
 ) -> None:
-    service = PayloadService(session, transformer)
+    service = PayloadService(session, transformer, "1")
     first = service.create(sample_request)
 
     second = service.create(sample_request)
@@ -67,7 +76,7 @@ def test_identical_request_reuses_id_without_transforming(
 def test_only_unseen_strings_are_transformed(
     session: Session, transformer: UpperCaseTransformer, sample_request: PayloadRequest
 ) -> None:
-    service = PayloadService(session, transformer)
+    service = PayloadService(session, transformer, "1")
     service.create(sample_request)
 
     overlapping = PayloadRequest(list_1=["first string", "brand new"], list_2=["last string", "x"])
@@ -79,7 +88,7 @@ def test_only_unseen_strings_are_transformed(
 
 
 def test_unknown_id_reads_as_none(session: Session, transformer: UpperCaseTransformer) -> None:
-    assert PayloadService(session, transformer).get_output("0" * 64) is None
+    assert PayloadService(session, transformer, "1").get_output("0" * 64) is None
 
 
 def test_concurrent_identical_requests_converge_on_one_payload(
@@ -98,7 +107,7 @@ def test_concurrent_identical_requests_converge_on_one_payload(
     def create() -> CreateResult:
         with session_factory() as session:
             start_together.wait()
-            return PayloadService(session, transformer).create(sample_request)
+            return PayloadService(session, transformer, "1").create(sample_request)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         results = list(pool.map(lambda _: create(), range(workers)))
@@ -145,7 +154,7 @@ def test_concurrent_overlapping_requests_in_different_order_both_succeed(
 
     def create(request: PayloadRequest) -> CreateResult:
         with session_factory() as session:
-            return PayloadService(session, transformer).create(request)
+            return PayloadService(session, transformer, "1").create(request)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(create, [forward, backward]))
@@ -153,3 +162,7 @@ def test_concurrent_overlapping_requests_in_different_order_both_succeed(
     assert all(result.created for result in results)
     with session_factory() as session:
         assert session.scalar(select(func.count()).select_from(TransformedString)) == len(strings)
+
+
+def test_the_transformer_version_is_part_of_the_payload_id(sample_request: PayloadRequest) -> None:
+    assert payload_id_for(sample_request, "1") != payload_id_for(sample_request, "2")

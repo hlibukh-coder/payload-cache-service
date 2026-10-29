@@ -26,7 +26,7 @@ SAMPLE_OUTPUT = (
 # The id the README documents for SAMPLE_REQUEST. Pinned so that a change to the canonical
 # form (key order, separators, escaping) is noticed: every stored payload id would otherwise
 # silently stop resolving.
-SAMPLE_ID = "831db6735056b8b4eca24283fd7129380f4c8f94948fc77a2a28a61f191da401"
+SAMPLE_ID = "512df758f001b543a8272d884fd97045f67ce8ac446bbf0dc2a6c64ae79d8a4a"
 
 
 @pytest.fixture
@@ -79,6 +79,7 @@ def app(database_url: str) -> FastAPI:
             database_url=database_url,
             echo_sql=False,
             transformer_latency_seconds=0.0,
+            transformer_version="1",
             _env_file=None,
         )
     )

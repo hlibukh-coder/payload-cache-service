@@ -8,9 +8,9 @@ It ships with `cache-cli`, a command-line tool for exercising the service.
 
 ```
 POST /payload  {"list_1": ["first string", ...], "list_2": ["other string", ...]}
-  -> 201 {"id": "831db673...", "message": "Payload created."}
+  -> 201 {"id": "512df758...", "message": "Payload created."}
 
-GET  /payload/831db673...
+GET  /payload/512df758...
   -> 200 {"output": "FIRST STRING, OTHER STRING, SECOND STRING, ANOTHER STRING, ..."}
 ```
 
@@ -19,11 +19,12 @@ GET  /payload/831db673...
 1. **`main.py`** – `POST /payload` validates the body against `schemas.PayloadRequest`
    (two non-empty, bounded lists of strings of equal length, no unknown fields) and hands
    it to `PayloadService` with a request-scoped SQLAlchemy session.
-2. **`service.py`** – derives the payload id from the canonical JSON of the request. If a
-   payload with that id already exists the id is returned immediately (HTTP 200) without
-   touching the transformer.
+2. **`service.py`** – derives the payload id from the canonical JSON of the request and the
+   transformer version. If a payload with that id already exists the id is returned
+   immediately (HTTP 200) without touching the transformer.
 3. **`cache.py`** – otherwise every distinct string from both lists is looked up in
-   `transformed_strings` in one query (chunked for very large inputs). Only strings that
+   `transformed_strings` in one query (chunked for very large inputs), under keys that also
+   include the transformer version. Only strings that
    were never seen are sent to the transformer, and their results are written back with
    `INSERT ... ON CONFLICT DO NOTHING`.
 4. **`service.py`** – interleaves the transformed strings (`a1, b1, a2, b2, ...`), stores
@@ -35,10 +36,10 @@ GET  /payload/831db673...
 
 Two tables, both **content-addressed** (`models.py`):
 
-| table                 | key                                | value                          |
-|-----------------------|------------------------------------|--------------------------------|
-| `transformed_strings` | SHA-256 of the input string        | the transformer's output       |
-| `payloads`            | SHA-256 of the canonical request   | the interleaved output string  |
+| table                 | key                                                   | value                         |
+|-----------------------|-------------------------------------------------------|-------------------------------|
+| `transformed_strings` | SHA-256 of `[transformer version, input string]`      | the transformer's output      |
+| `payloads`            | SHA-256 of the canonical request + transformer version | the interleaved output string |
 
 Why this shape:
 
@@ -49,6 +50,12 @@ Why this shape:
 - **Hash keys instead of raw text.** Primary keys stay a fixed 64 characters regardless of
   input length, which keeps indexes compact and sidesteps PostgreSQL's limit on the size of
   indexed values.
+- **The transformer version is part of every key.** The transformer stands in for an
+  external service, and external services change. `TRANSFORMER_VERSION` is hashed into
+  string keys and payload ids, so bumping it turns every cached result into a miss and gives
+  new payloads new ids, instead of serving under an old id an output a different transformer
+  produced. Each row also records its version, which is what lets rows of other versions be
+  found and purged at start-up (`eviction.py`).
 - **Minimal transformer calls.** Within one request, repeated strings are de-duplicated
   before the lookup; across requests, every string ever transformed is served from the
   database. The test suite asserts the exact call counts.
@@ -80,6 +87,7 @@ Interactive docs: <http://localhost:8000/docs>. Configuration is read from the e
 | `ECHO_SQL`                    | `false`                              | log every SQL statement                   |
 | `LOG_LEVEL`                   | `INFO`                               | threshold of the JSON log on stdout       |
 | `TRANSFORMER_LATENCY_SECONDS` | `0`                                  | simulate a slow external service          |
+| `TRANSFORMER_VERSION`         | `1`                                  | hashed into every cache key; bump it when the transformer changes |
 
 ### Docker
 
@@ -117,7 +125,10 @@ payload-cache-migrate        # same DATABASE_URL as the service; then RUN_MIGRAT
 ```
 
 Several replicas starting at once would race on Alembic's version table, which is why a
-deployment with more than one migrates once up front and tells the replicas not to. To
+deployment with more than one migrates once up front and tells the replicas not to. A
+replica that is told not to still checks the revision at start-up and refuses to start
+against a database that is behind, naming the command to run, rather than failing on its
+first request with a missing-column error. To
 change the schema, edit `models.py` and generate the revision from a checkout:
 
 ```bash
@@ -181,13 +192,13 @@ cat request.json | cache-cli --input - --output report.json
 
 ```json
 {
-  "id": "831db6735056b8b4eca24283fd7129380f4c8f94948fc77a2a28a61f191da401",
+  "id": "512df758f001b543a8272d884fd97045f67ce8ac446bbf0dc2a6c64ae79d8a4a",
   "output": "FIRST STRING, OTHER STRING, SECOND STRING, ANOTHER STRING, THIRD STRING, LAST STRING",
   "consistent": true,
   "runs": [
-    {"iteration": 1, "id": "831db673…", "status": 201, "post_ms": 347.26, "get_ms": 3.3},
-    {"iteration": 2, "id": "831db673…", "status": 200, "post_ms": 2.32, "get_ms": 1.58},
-    {"iteration": 3, "id": "831db673…", "status": 200, "post_ms": 1.59, "get_ms": 1.55}
+    {"iteration": 1, "id": "512df758…", "status": 201, "post_ms": 347.26, "get_ms": 3.3},
+    {"iteration": 2, "id": "512df758…", "status": 200, "post_ms": 2.32, "get_ms": 1.58},
+    {"iteration": 3, "id": "512df758…", "status": 200, "post_ms": 1.59, "get_ms": 1.55}
   ]
 }
 ```
@@ -250,10 +261,12 @@ The same checks run on GitHub Actions for every push and pull request
   created the tables with `create_all`; a cache can be rebuilt, but a column added later (an
   eviction marker, a transformer version) could not have been, so the schema is versioned
   from the start rather than retrofitted under pressure.
-- **No cache invalidation.** Cached results are assumed valid forever because the
-  transformer is deterministic. If the transformer changed behaviour, its version would have
-  to become part of both cache keys. Rows do carry `created_at`, so an age-based eviction job
-  can be added later without a schema change.
+- **Invalidation by version, not per key.** A cached result stays valid for as long as the
+  transformer behaves the same, so the one invalidation handle is the transformer version:
+  bump it and every key changes. There is deliberately no endpoint to drop individual
+  entries, which would invite callers to work around a bad transformer result instead of
+  fixing it. Rows carry `created_at`, so an age-based limit can be added without a schema
+  change.
 - **The database connection is not held across transformer calls.** The cache ends its
   read-only lookup transaction before calling the transformer, so a slow external service
   pins neither a pooled connection nor, on PostgreSQL, an open transaction. The results are
