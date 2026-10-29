@@ -1,8 +1,11 @@
 """HTTP layer: wires settings, database and transformer into a FastAPI application."""
 
+import asyncio
 from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+from datetime import timedelta
+from functools import partial
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Request, Response, status
@@ -15,7 +18,7 @@ from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from payload_cache.config import Settings
 from payload_cache.db import make_engine
-from payload_cache.eviction import purge_other_versions
+from payload_cache.eviction import evict_expired, purge_other_versions, run_periodically
 from payload_cache.logging_setup import configure_logging
 from payload_cache.metrics import render as render_metrics
 from payload_cache.middleware import RequestContextMiddleware
@@ -214,7 +217,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             transformer=UpperCaseTransformer(settings.transformer_latency_seconds),
             transformer_version=settings.transformer_version,
         )
+        eviction: asyncio.Task[None] | None = None
+        if settings.cache_ttl_seconds is not None:
+            sweep = partial(
+                evict_expired, session_factory, timedelta(seconds=settings.cache_ttl_seconds)
+            )
+            # Once now, so a service that was down for longer than the TTL starts clean, then
+            # in the background for as long as the application runs.
+            sweep()
+            eviction = asyncio.create_task(
+                run_periodically(sweep, settings.eviction_interval_seconds), name="cache-eviction"
+            )
         yield
+        if eviction is not None:
+            eviction.cancel()
+            with suppress(asyncio.CancelledError):
+                await eviction
         engine.dispose()
 
     app = FastAPI(

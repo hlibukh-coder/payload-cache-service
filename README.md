@@ -56,6 +56,13 @@ Why this shape:
   new payloads new ids, instead of serving under an old id an output a different transformer
   produced. Each row also records its version, which is what lets rows of other versions be
   found and purged at start-up (`eviction.py`).
+- **Bounded by age, when asked.** With `CACHE_TTL_SECONDS` set, a background sweep
+  (`eviction.py`) deletes rows older than that from both tables: once at start-up, so a
+  service that was down for longer than the TTL starts clean, then every
+  `EVICTION_INTERVAL_SECONDS` for as long as it runs; `created_at` is indexed for it
+  (revision 0003). An evicted payload answers 404 until the same request is posted again,
+  which gives it the same id back. Unset, the cache keeps everything: the right default
+  while the transformer is deterministic and storage is not the constraint.
 - **Minimal transformer calls.** Within one request, repeated strings are de-duplicated
   before the lookup; across requests, every string ever transformed is served from the
   database. The test suite asserts the exact call counts.
@@ -88,6 +95,8 @@ Interactive docs: <http://localhost:8000/docs>. Configuration is read from the e
 | `LOG_LEVEL`                   | `INFO`                               | threshold of the JSON log on stdout       |
 | `TRANSFORMER_LATENCY_SECONDS` | `0`                                  | simulate a slow external service          |
 | `TRANSFORMER_VERSION`         | `1`                                  | hashed into every cache key; bump it when the transformer changes |
+| `CACHE_TTL_SECONDS`           | unset                                | delete cache rows older than this (unset: keep everything) |
+| `EVICTION_INTERVAL_SECONDS`   | `300`                                | how often the TTL sweep runs              |
 
 ### Docker
 
@@ -164,6 +173,7 @@ traffic; uvicorn's own access log is turned off because this line supersedes it.
 |------------------------------------------------|-----------------------------|-------------------------------------------------------------------------|
 | `payload_cache_transform_strings_total`        | `result` = `hit` \| `miss`  | distinct strings per request served from the cache or sent to the transformer; misses are the transformer calls made |
 | `payload_cache_payloads_total`                 | `result` = `created` \| `reused` | `POST /payload` outcomes                                           |
+| `payload_cache_evicted_rows_total`             | `table`, `reason` = `version` \| `ttl` | rows removed by the start-up purge of other transformer versions and by the TTL sweep |
 | `payload_cache_http_request_duration_seconds`  | `method`, `route`, `status` | latency histogram by route template; unrouted requests share the label `unmatched`, so client-chosen paths cannot multiply the series |
 
 The image runs one uvicorn worker, so the process-wide registry describes the whole
@@ -265,8 +275,8 @@ The same checks run on GitHub Actions for every push and pull request
   transformer behaves the same, so the one invalidation handle is the transformer version:
   bump it and every key changes. There is deliberately no endpoint to drop individual
   entries, which would invite callers to work around a bad transformer result instead of
-  fixing it. Rows carry `created_at`, so an age-based limit can be added without a schema
-  change.
+  fixing it. Age is the other, orthogonal limit: `CACHE_TTL_SECONDS` bounds how long any
+  row lives, for deployments where storage rather than freshness is the constraint.
 - **The database connection is not held across transformer calls.** The cache ends its
   read-only lookup transaction before calling the transformer, so a slow external service
   pins neither a pooled connection nor, on PostgreSQL, an open transaction. The results are

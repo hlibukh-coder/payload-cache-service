@@ -38,10 +38,11 @@ class TransformedString(Base):
     # Which transformer produced the row. The version is also hashed into the key, so a row
     # of another version is never looked up; the column is what lets such rows be purged.
     transformer_version: Mapped[str] = mapped_column(String(TRANSFORMER_VERSION_LENGTH))
-    # Not consulted when serving requests. Recorded now so that an age-based eviction job, or
-    # someone inspecting the table, can tell how old a row is without a migration later (the
-    # cache is otherwise unbounded; see "No cache invalidation" in the README).
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # Not consulted when serving requests: it is what the age-based eviction sweep deletes by
+    # (eviction.py), hence the index, and what someone inspecting the table reads.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
 
 
 class Payload(Base):
@@ -60,4 +61,6 @@ class Payload(Base):
     # Same purpose as TransformedString.transformer_version.
     transformer_version: Mapped[str] = mapped_column(String(TRANSFORMER_VERSION_LENGTH))
     # Same purpose as TransformedString.created_at.
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )

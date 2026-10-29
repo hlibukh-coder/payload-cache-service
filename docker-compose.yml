@@ -8,6 +8,8 @@ services:
       - payload-data:/data
     # environment:
     #   TRANSFORMER_LATENCY_SECONDS: "0.05"  # makes cache hits visible when demoing with cache-cli
+    #   CACHE_TTL_SECONDS: "604800"          # drop cache rows older than a week (default: keep all)
+    #   TRANSFORMER_VERSION: "2"             # bump when the transformer changes behaviour
 
   # Optional: the same image on PostgreSQL. Start it by name,
   # `docker compose --profile postgres up --build api-postgres`, so the SQLite `api` above

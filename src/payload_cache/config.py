@@ -6,7 +6,7 @@ image runs unchanged in every environment.
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, PositiveInt
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from payload_cache.models import TRANSFORMER_VERSION_LENGTH
@@ -37,6 +37,15 @@ class Settings(BaseSettings):
     transformer_version: str = Field(
         default="1", pattern=rf"^[A-Za-z0-9._-]{{1,{TRANSFORMER_VERSION_LENGTH}}}$"
     )
+
+    # Rows older than this are deleted by a background sweep (eviction.py); unset, the cache
+    # keeps everything, which is right while the transformer is deterministic and storage
+    # is not the constraint. An evicted payload answers 404 until the same request is posted
+    # again, when it gets the same id back.
+    cache_ttl_seconds: PositiveInt | None = None
+    # How often the sweep runs when a TTL is set. Rows live up to this much longer than the
+    # TTL, so a few minutes is plenty; shorter only adds load.
+    eviction_interval_seconds: PositiveInt = 300
 
     # Artificial delay per transformer call. The transformer stands in for an external
     # service, and a non-zero delay makes cache hits visibly cheaper than misses.
