@@ -22,6 +22,8 @@ dependencies = [
     # httpx's successor. Starlette's TestClient is built on it, so cache-cli and the tests
     # share one HTTP client and one set of exception types.
     "httpx2>=2.0",
+    # Official client; 0.20 is the first release whose exposition helpers are typed.
+    "prometheus-client>=0.20",
 ]
 
 [project.optional-dependencies]

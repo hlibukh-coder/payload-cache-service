@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from payload_cache.db import insert_or_ignore
 from payload_cache.hashing import sha256_hex
+from payload_cache.metrics import TRANSFORM_STRINGS
 from payload_cache.models import TransformedString
 from payload_cache.transformer import Transformer
 
@@ -33,6 +34,8 @@ class TransformCache:
         distinct = list(dict.fromkeys(values))
         results = self._lookup(distinct)
         misses = [value for value in distinct if value not in results]
+        TRANSFORM_STRINGS.labels("hit").inc(len(results))
+        TRANSFORM_STRINGS.labels("miss").inc(len(misses))
         if misses:
             # Nothing has been written yet, so ending the read-only lookup transaction loses
             # nothing and hands the pooled connection back while we wait on the (external)

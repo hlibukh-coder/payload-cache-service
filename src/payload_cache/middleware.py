@@ -14,6 +14,7 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from payload_cache.logging_setup import request_id_var
+from payload_cache.metrics import HTTP_REQUEST_DURATION, UNMATCHED_ROUTE
 
 logger = logging.getLogger("payload_cache.http")
 
@@ -23,9 +24,9 @@ REQUEST_ID_HEADER = "X-Request-ID"
 # could forge extra log lines. Anything else is replaced rather than rejected; the id exists
 # for operators, not for the client.
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
-# Probe traffic arrives every few seconds and would drown the access log; it is logged at
-# DEBUG so the log stays about real requests but can still be switched on.
-QUIET_ROUTES = frozenset({"/health"})
+# Probes and scrapes arrive every few seconds and would drown the access log; they are
+# logged at DEBUG so the log stays about real requests but can still be switched on.
+QUIET_ROUTES = frozenset({"/health", "/metrics"})
 
 
 class RequestContextMiddleware:
@@ -58,6 +59,10 @@ class RequestContextMiddleware:
             # The route template ("/payload/{payload_id}") rather than the concrete path: it
             # names the handler, and it stays low-cardinality when it becomes a metric label.
             route = getattr(scope.get("route"), "path", None)
+            elapsed = time.perf_counter() - started
+            HTTP_REQUEST_DURATION.labels(
+                scope["method"], route or UNMATCHED_ROUTE, str(status_code)
+            ).observe(elapsed)
             logger.log(
                 logging.DEBUG if route in QUIET_ROUTES else logging.INFO,
                 "%s %s -> %d",
@@ -70,7 +75,7 @@ class RequestContextMiddleware:
                     "path": scope["path"],
                     "route": route,
                     "status": status_code,
-                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                    "duration_ms": round(elapsed * 1000, 2),
                 },
             )
             request_id_var.reset(token)

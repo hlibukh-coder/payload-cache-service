@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from payload_cache.cache import TransformCache
 from payload_cache.db import insert_or_ignore
 from payload_cache.hashing import canonical_json, sha256_hex
+from payload_cache.metrics import PAYLOADS
 from payload_cache.models import Payload
 from payload_cache.schemas import PayloadRequest
 from payload_cache.transformer import Transformer
@@ -42,6 +43,7 @@ class PayloadService:
         # Only the key is read; the stored output (megabytes at the schema bounds) is not
         # needed to answer.
         if self._session.scalar(select(Payload.id).where(Payload.id == payload_id)) is not None:
+            PAYLOADS.labels("reused").inc()
             return CreateResult(payload_id, created=False)
 
         transformed = self._cache.transform_many([*request.list_1, *request.list_2])
@@ -57,7 +59,9 @@ class PayloadService:
             .returning(Payload.id)
         ).scalar_one_or_none()
         self._session.commit()
-        return CreateResult(payload_id, created=inserted_id is not None)
+        created = inserted_id is not None
+        PAYLOADS.labels("created" if created else "reused").inc()
+        return CreateResult(payload_id, created=created)
 
     def get_output(self, payload_id: str) -> str | None:
         payload = self._session.get(Payload, payload_id)

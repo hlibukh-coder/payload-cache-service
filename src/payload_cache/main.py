@@ -16,6 +16,7 @@ from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from payload_cache.config import Settings
 from payload_cache.db import make_engine
 from payload_cache.logging_setup import configure_logging
+from payload_cache.metrics import render as render_metrics
 from payload_cache.middleware import RequestContextMiddleware
 from payload_cache.models import DIGEST_LENGTH, Base
 from payload_cache.schemas import PayloadCreated, PayloadRead, PayloadRequest
@@ -140,6 +141,13 @@ def health(session: SessionDep) -> dict[str, str]:
             status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable."
         ) from error
     return {"status": "ok"}
+
+
+@router.get("/metrics", include_in_schema=False)
+def metrics() -> Response:
+    """Prometheus exposition; cache hit ratio, payload outcomes and request latency."""
+    body, content_type = render_metrics()
+    return Response(body, media_type=content_type)
 
 
 # The one piece of client text that travels in an error location is the name of an unknown

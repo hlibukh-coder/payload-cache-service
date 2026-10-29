@@ -69,11 +69,12 @@ def test_unrouted_requests_are_logged_without_a_route(
     assert fields["status"] == 404
 
 
-def test_health_probes_are_logged_at_debug(
-    client: TestClient, caplog: pytest.LogCaptureFixture
+@pytest.mark.parametrize("path", ["/health", "/metrics"])
+def test_probes_and_scrapes_are_logged_at_debug(
+    client: TestClient, caplog: pytest.LogCaptureFixture, path: str
 ) -> None:
     with caplog.at_level(logging.DEBUG, logger="payload_cache.http"):
-        client.get("/health")
+        client.get(path)
     [record] = [r for r in caplog.records if r.name == "payload_cache.http"]
     assert record.levelno == logging.DEBUG
 

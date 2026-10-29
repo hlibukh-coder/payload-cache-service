@@ -120,8 +120,21 @@ template, the status and the duration:
  "route": "/payload", "status": 201, "duration_ms": 3.81}
 ```
 
-Health probes are logged at `DEBUG` so the access log stays about real traffic; uvicorn's
-own access log is turned off because this line supersedes it.
+Health probes and metric scrapes are logged at `DEBUG` so the access log stays about real
+traffic; uvicorn's own access log is turned off because this line supersedes it.
+
+`GET /metrics` serves Prometheus metrics (`metrics.py`):
+
+| metric                                         | labels                      | meaning                                                                 |
+|------------------------------------------------|-----------------------------|-------------------------------------------------------------------------|
+| `payload_cache_transform_strings_total`        | `result` = `hit` \| `miss`  | distinct strings per request served from the cache or sent to the transformer; misses are the transformer calls made |
+| `payload_cache_payloads_total`                 | `result` = `created` \| `reused` | `POST /payload` outcomes                                           |
+| `payload_cache_http_request_duration_seconds`  | `method`, `route`, `status` | latency histogram by route template; unrouted requests share the label `unmatched`, so client-chosen paths cannot multiply the series |
+
+The image runs one uvicorn worker, so the process-wide registry describes the whole
+container; scale with replicas, each scraped on its own, rather than with `--workers`,
+which would need the client library's multiprocess mode. Neither `/health` nor `/metrics`
+is authenticated: expose them to the probe and the scraper, not through the public gateway.
 
 ## `cache-cli`
 
@@ -268,6 +281,7 @@ src/payload_cache/
   main.py         FastAPI app factory, routes, dependencies
   middleware.py   request id + access-log line (raw ASGI)
   logging_setup.py JSON log formatter, uvicorn loggers redirected
+  metrics.py      Prometheus collectors and the exposition for /metrics
   service.py      payload id, interleaving, orchestration
   cache.py        batched lookup / fill of transformer results
   transformer.py  the simulated external service
