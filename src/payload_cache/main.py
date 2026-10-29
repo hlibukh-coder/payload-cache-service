@@ -15,6 +15,8 @@ from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from payload_cache.config import Settings
 from payload_cache.db import make_engine
+from payload_cache.logging_setup import configure_logging
+from payload_cache.middleware import RequestContextMiddleware
 from payload_cache.models import DIGEST_LENGTH, Base
 from payload_cache.schemas import PayloadCreated, PayloadRead, PayloadRequest
 from payload_cache.service import PayloadService
@@ -180,6 +182,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     the module reads no configuration and has no side effects.
     """
     settings = settings or Settings()
+    # Process-wide, and done here rather than at import time for the same reason the engine
+    # is: the factory is the one place that knows the settings.
+    configure_logging(settings.log_level)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -204,6 +209,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.add_middleware(RequestBodyLimitMiddleware, max_body_size=MAX_BODY_BYTES)
+    # Added last, so it is outermost: a 413 from the body limit is logged like any response.
+    app.add_middleware(RequestContextMiddleware)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.include_router(router)
     return app

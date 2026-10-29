@@ -77,6 +77,7 @@ Interactive docs: <http://localhost:8000/docs>. Configuration is read from the e
 |-------------------------------|--------------------------------------|-------------------------------------------|
 | `DATABASE_URL`                | `sqlite:///./data/payload_cache.db`  | SQLAlchemy URL, SQLite (3.35+) or PostgreSQL |
 | `ECHO_SQL`                    | `false`                              | log every SQL statement                   |
+| `LOG_LEVEL`                   | `INFO`                               | threshold of the JSON log on stdout       |
 | `TRANSFORMER_LATENCY_SECONDS` | `0`                                  | simulate a slow external service          |
 
 ### Docker
@@ -102,6 +103,25 @@ service keeps the SQLite `api` from starting alongside:
 ```bash
 docker compose --profile postgres up --build api-postgres   # API on :8001, PostgreSQL on :5433
 ```
+
+## Observability
+
+Every log line is one JSON object on stdout, uvicorn's own lines included, so a log shipper
+needs no parsing rules. The middleware in `middleware.py` gives each request an id, taken
+from an incoming `X-Request-ID` header when it looks like an identifier and generated
+otherwise, returns it in the response and tags every log line written while the request is
+being handled (`logging_setup.py` reads it from a context variable, so handlers and the
+cache do not pass it around). One access-log line per request names the method, the route
+template, the status and the duration:
+
+```json
+{"time": "2026-10-29T10:12:03.412+00:00", "level": "INFO", "logger": "payload_cache.http",
+ "message": "POST /payload -> 201", "request_id": "6f1c…", "method": "POST", "path": "/payload",
+ "route": "/payload", "status": 201, "duration_ms": 3.81}
+```
+
+Health probes are logged at `DEBUG` so the access log stays about real traffic; uvicorn's
+own access log is turned off because this line supersedes it.
 
 ## `cache-cli`
 
@@ -211,6 +231,11 @@ The same checks run on GitHub Actions for every push and pull request
   of transformer calls or fill the cache with megabyte-sized rows. Strings that are legal
   JSON but can be neither hashed nor stored (NUL characters, lone surrogates) get a 422
   instead of failing with a 500 half-way through.
+- **Logging configured by the application factory, not by the server.** `create_app`
+  installs the JSON handler and redirects uvicorn's loggers through it. That is a process-wide
+  side effect inside a factory, accepted because the factory is the one place that knows the
+  settings, and because the alternative, a uvicorn `--log-config` file, would have to be kept
+  in step with the code by hand.
 - **No authentication or rate limiting.** Out of scope for the exercise; both belong in the
   reverse proxy or gateway in front of a service like this.
 - **Dependencies locked for the image, ranged for the package.** `pyproject.toml` declares
@@ -241,6 +266,8 @@ The same checks run on GitHub Actions for every push and pull request
 ```
 src/payload_cache/
   main.py         FastAPI app factory, routes, dependencies
+  middleware.py   request id + access-log line (raw ASGI)
+  logging_setup.py JSON log formatter, uvicorn loggers redirected
   service.py      payload id, interleaving, orchestration
   cache.py        batched lookup / fill of transformer results
   transformer.py  the simulated external service
