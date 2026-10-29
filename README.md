@@ -1,5 +1,7 @@
 # Payload Cache Service
 
+[![CI](https://github.com/hlibukh-coder/payload-cache-service/actions/workflows/ci.yml/badge.svg)](https://github.com/hlibukh-coder/payload-cache-service/actions/workflows/ci.yml)
+
 A small FastAPI microservice that builds a payload from two lists of strings and caches
 the results of an (simulated) external "transformer" so the same work is never done twice.
 It ships with `cache-cli`, a command-line tool for exercising the service.
@@ -167,6 +169,11 @@ pip install -e ".[dev,postgres]"
 docker compose --profile postgres up -d postgres
 TEST_DATABASE_URL=postgresql+psycopg://payload:payload@localhost:5433/payload pytest
 ```
+
+The same checks run on GitHub Actions for every push and pull request
+(`.github/workflows/ci.yml`): lint and types, the suite on SQLite under Python 3.12 and
+3.13 and on PostgreSQL 17, and a smoke test that builds the Docker image, waits for
+`/health` and runs `cache-cli` inside the container.
 
 ## Decisions and trade-offs
 
