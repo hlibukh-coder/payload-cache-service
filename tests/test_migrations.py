@@ -1,5 +1,5 @@
 import pytest
-from alembic import command
+from alembic import command, op
 from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
@@ -96,3 +96,50 @@ def test_migrate_command_brings_the_database_to_head(
     monkeypatch.setenv("DATABASE_URL", database_url)
     assert schema.main() == 0
     assert current_revision(engine) == head_revision()
+
+
+def test_a_database_created_before_migrations_is_adopted(engine: Engine) -> None:
+    # What the releases before Alembic left on their volume: the 0001 tables (0001 mirrors
+    # their create_all schema) with data in them, and no version table.
+    config = schema.alembic_config()
+    with engine.begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "0001")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DROP TABLE alembic_version")
+        connection.exec_driver_sql(
+            "INSERT INTO payloads (id, output, created_at) VALUES ('"
+            + "a" * 64
+            + "', 'OLD', CURRENT_TIMESTAMP)"
+        )
+    assert current_revision(engine) is None
+
+    schema.upgrade_to_head(engine)
+
+    assert current_revision(engine) == head_revision()
+    with engine.connect() as connection:
+        assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
+        # Keyed without a version, so unreachable under the new ids: dropped, not kept forever.
+        assert connection.exec_driver_sql("SELECT COUNT(*) FROM payloads").scalar() == 0
+
+
+def test_a_revision_failing_half_way_leaves_the_database_untouched(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created: list[str] = []
+    real_create_index = op.create_index
+
+    def create_one_index_then_fail(name: str, *args: object, **kwargs: object) -> None:
+        if created:
+            raise RuntimeError("simulated failure inside revision 0003")
+        real_create_index(name, *args, **kwargs)  # type: ignore[arg-type]
+        created.append(name)
+
+    monkeypatch.setattr(op, "create_index", create_one_index_then_fail)
+    with pytest.raises(RuntimeError, match="simulated failure"):
+        schema.upgrade_to_head(engine)
+
+    # One transaction for the whole run, DDL included, on SQLite as on PostgreSQL.
+    assert created
+    assert current_revision(engine) is None
+    assert not set(inspect(engine).get_table_names())

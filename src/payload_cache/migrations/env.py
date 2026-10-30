@@ -29,6 +29,13 @@ def run_migrations(connection: Connection) -> None:
         context.run_migrations()
 
 
+if context.is_offline_mode():
+    # Refused rather than half-supported: batch mode on SQLite needs the live table to
+    # rebuild it, so a generated script would be wrong.
+    raise RuntimeError(
+        "offline (--sql) migrations are not supported; run them against the database"
+    )
+
 connection = context.config.attributes.get("connection")
 if connection is not None:
     run_migrations(connection)

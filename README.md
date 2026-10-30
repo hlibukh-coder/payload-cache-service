@@ -126,7 +126,8 @@ docker compose --profile postgres up --build api-postgres   # API on :8001, Post
 The schema is managed with Alembic. The revision scripts live inside the package
 (`src/payload_cache/migrations/`), so an installed application, the Docker image included,
 migrates its own database: on start-up by default (`schema.py` applies pending revisions in
-one transaction; nothing pending is a no-op), or as a release step:
+one transaction, DDL included on SQLite too, so a failure leaves the database as it was;
+nothing pending is a no-op), or as a release step:
 
 ```bash
 payload-cache-migrate        # same DATABASE_URL as the service; then RUN_MIGRATIONS=false
@@ -137,6 +138,11 @@ deployment with more than one migrates once up front and tells the replicas not 
 replica that is told not to still checks the revision at start-up and refuses to start
 against a database that is behind, naming the command to run, rather than failing on its
 first request with a missing-column error.
+
+A database created before migrations existed (tables, no version table) is recognised and
+recorded as revision 0001, so a service upgraded on an old volume starts normally. Revision
+0002 empties both tables: their rows were keyed without a transformer version and can never
+be looked up again; the cache refills on demand.
 
 To change the schema, edit `models.py` and generate the revision from a checkout:
 

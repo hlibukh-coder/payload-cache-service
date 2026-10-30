@@ -12,7 +12,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import Engine
+from sqlalchemy import Connection, Engine, inspect
 
 from payload_cache.config import Settings
 from payload_cache.db import make_engine
@@ -34,18 +34,42 @@ def alembic_config() -> Config:
     return config
 
 
+# The revision whose schema the releases before Alembic created with create_all.
+PRE_ALEMBIC_REVISION = "0001"
+
+
 def upgrade_to_head(engine: Engine) -> None:
     """Apply every pending revision, inside one transaction.
 
     Nothing pending is a no-op, which is what makes running this on every start-up safe.
     The transaction is opened here, so env.py sees it and does not manage its own: a failure
-    half-way leaves the database at the previous revision, not somewhere in between (on
-    PostgreSQL; SQLite also rolls DDL back).
+    half-way leaves the database where it was, not somewhere in between, on both backends.
     """
     config = alembic_config()
     with engine.begin() as connection:
+        if connection.dialect.name == "sqlite":
+            # pysqlite never opens a transaction before DDL, so without this every CREATE and
+            # ALTER commits on its own and a failed revision leaves a half-built schema that
+            # the next start-up cannot migrate. With an explicit BEGIN the DDL is part of the
+            # transaction SQLAlchemy commits or rolls back. Only this connection is affected:
+            # the application's own connections keep pysqlite's default behaviour.
+            connection.exec_driver_sql("BEGIN")
         config.attributes["connection"] = connection
+        if _created_before_alembic(connection):
+            # Tables made by create_all and no version table: that is revision 0001 exactly.
+            # Recording it lets the later revisions apply instead of 0001 failing on "table
+            # already exists", which would keep a service on an old volume from starting.
+            logger.info(
+                "adopting a database created before migrations",
+                extra={"revision": PRE_ALEMBIC_REVISION},
+            )
+            command.stamp(config, PRE_ALEMBIC_REVISION)
         command.upgrade(config, "head")
+
+
+def _created_before_alembic(connection: Connection) -> bool:
+    current = MigrationContext.configure(connection).get_current_revision()
+    return current is None and inspect(connection).has_table("payloads")
 
 
 def ensure_at_head(engine: Engine) -> None:
@@ -72,8 +96,8 @@ def main() -> int:
     more than one sets RUN_MIGRATIONS=false and runs this once instead.
     """
     settings = Settings()
-    configure_logging(settings.log_level)
-    engine = make_engine(settings.database_url, echo=settings.echo_sql)
+    configure_logging(settings.log_level, echo_sql=settings.echo_sql)
+    engine = make_engine(settings.database_url)
     try:
         upgrade_to_head(engine)
     finally:

@@ -17,16 +17,14 @@ depends_on: Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Rows that predate the column were produced before a version could be configured, that
-    # is, by version "1"; the server default labels them so, and costs nothing afterwards
-    # because the application always writes the column explicitly.
     for table in ("transformed_strings", "payloads"):
+        # Rows written before this revision are keyed without a version, and from here on
+        # every key and payload id includes one: no lookup can reach them again, and labelled
+        # with any version they would only sit there (or, labelled current, never be purged).
+        # The data is a cache, so the correct migration is to drop it; it refills on demand.
+        op.execute(sa.text(f"DELETE FROM {table}"))
         with op.batch_alter_table(table) as batch:
-            batch.add_column(
-                sa.Column(
-                    "transformer_version", sa.String(length=32), nullable=False, server_default="1"
-                )
-            )
+            batch.add_column(sa.Column("transformer_version", sa.String(length=32), nullable=False))
 
 
 def downgrade() -> None:
