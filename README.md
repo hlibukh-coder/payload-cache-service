@@ -362,6 +362,13 @@ builds the Docker image, waits for `/health` and runs `cache-cli` inside the con
   takes `-H` and `-h` keeps its conventional meaning.
 - "Payload files" are stored as rows in the database rather than on disk: the database is
   already the persistence layer the task asks for, and a file store would add a second one.
+- The task only asks for two lists of the same length. Unknown fields, empty lists and
+  requests above 1 000 strings per list or 1 000 characters per string are refused with a
+  422, and bodies
+  above 16 MiB with a 413 (see "Strict request validation" above for why).
+- `GET /payload/{id}` answers 404 for an id that is well formed but unknown, and 422 for
+  one that cannot be an id at all (not 64 lower-case hex characters), so a client bug that
+  mangles ids is told apart from a payload that does not exist (or was evicted).
 
 ## Project layout
 
