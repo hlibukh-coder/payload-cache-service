@@ -244,7 +244,9 @@ ruff check . && ruff format --check . && mypy
 - **Unit:** hashing, the transformer, output interleaving, id determinism, cache keys, CLI
   parsing, the JSON log formatter, the eviction sweep and its retry loop.
 - **Integration:** the cache and service against a real database, the documented example
-  through the HTTP API, concurrent identical and overlapping requests, request ids and
+  through the HTTP API, the transformer failing part-way through a request (nothing is
+  stored, the client gets a 500, a retry succeeds), concurrent identical and overlapping
+  requests, request ids and
   access-log lines, metric deltas through `/metrics`, migrations up and down (and the migrated
   schema diffed against the models), a transformer-version bump across two application
   start-ups, the TTL sweep running at start-up and on its timer, and `cache-cli` end to end

@@ -29,6 +29,20 @@ SAMPLE_OUTPUT = (
 SAMPLE_ID = "512df758f001b543a8272d884fd97045f67ce8ac446bbf0dc2a6c64ae79d8a4a"
 
 
+class FailingTransformer(UpperCaseTransformer):
+    """Stands in for the external service going down part-way through a request."""
+
+    def __init__(self, fail_on_call: int) -> None:
+        super().__init__()
+        self._fail_on_call = fail_on_call
+
+    def transform(self, value: str) -> str:
+        result = super().transform(value)  # counts the call, which was paid for either way
+        if self.calls == self._fail_on_call:
+            raise ConnectionError("transformer unavailable")
+        return result
+
+
 @pytest.fixture(autouse=True)
 def _no_service_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     # Settings reads the environment, so an exported DATABASE_URL or CACHE_TTL_SECONDS would

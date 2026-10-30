@@ -9,7 +9,7 @@ from payload_cache.models import Payload, TransformedString
 from payload_cache.schemas import PayloadRequest
 from payload_cache.service import CreateResult, PayloadService, interleave, payload_id_for
 from payload_cache.transformer import UpperCaseTransformer
-from tests.conftest import SAMPLE_ID, SAMPLE_OUTPUT
+from tests.conftest import SAMPLE_ID, SAMPLE_OUTPUT, FailingTransformer
 
 
 def test_interleave_alternates_between_lists() -> None:
@@ -166,3 +166,25 @@ def test_concurrent_overlapping_requests_in_different_order_both_succeed(
 
 def test_the_transformer_version_is_part_of_the_payload_id(sample_request: PayloadRequest) -> None:
     assert payload_id_for(sample_request, "1") != payload_id_for(sample_request, "2")
+
+
+def test_a_transformer_failure_stores_nothing_and_a_retry_starts_over(
+    session: Session, sample_request: PayloadRequest
+) -> None:
+    # All or nothing: the results already paid for in the failed request are not kept, so
+    # the retry calls the transformer for all six strings again (see TransformCache._fill).
+    failing = FailingTransformer(fail_on_call=5)
+
+    with pytest.raises(ConnectionError):
+        PayloadService(session, failing, "1").create(sample_request)
+
+    assert failing.calls == 5
+    assert session.scalar(select(func.count()).select_from(TransformedString)) == 0
+    assert session.scalar(select(func.count()).select_from(Payload)) == 0
+
+    healthy = UpperCaseTransformer()
+    result = PayloadService(session, healthy, "1").create(sample_request)
+
+    assert result == CreateResult(SAMPLE_ID, created=True)
+    assert healthy.calls == 6
+    assert PayloadService(session, healthy, "1").get_output(SAMPLE_ID) == SAMPLE_OUTPUT

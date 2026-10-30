@@ -8,7 +8,8 @@ from sqlalchemy.orm import sessionmaker
 from payload_cache.db import make_engine
 from payload_cache.main import MAX_BODY_BYTES, MAX_LOCATION_PART_LENGTH
 from payload_cache.schemas import MAX_ITEM_LENGTH, MAX_ITEMS
-from tests.conftest import SAMPLE_ID, SAMPLE_OUTPUT, SAMPLE_REQUEST
+from payload_cache.transformer import UpperCaseTransformer
+from tests.conftest import SAMPLE_ID, SAMPLE_OUTPUT, SAMPLE_REQUEST, FailingTransformer
 
 JSON = {"content-type": "application/json"}
 
@@ -69,6 +70,28 @@ def test_only_new_strings_reach_the_transformer(client: TestClient, app: FastAPI
     assert client.get(response.headers["Location"]).json() == {
         "output": "FIRST STRING, LAST STRING, NEW ONE, NEW TWO"
     }
+
+
+def test_a_transformer_failure_is_a_500_and_leaves_no_payload_behind(app: FastAPI) -> None:
+    with TestClient(app, raise_server_exceptions=False) as client:
+        app.state.resources = replace(
+            app.state.resources, transformer=FailingTransformer(fail_on_call=3)
+        )
+
+        failed = client.post("/payload", json=SAMPLE_REQUEST)
+
+        assert failed.status_code == 500
+        assert failed.json() == {"detail": "Internal Server Error"}
+        assert "X-Request-ID" in failed.headers
+        assert client.get(f"/payload/{SAMPLE_ID}").status_code == 404
+
+        # The service recovers once the transformer does, with the same id as always.
+        app.state.resources = replace(app.state.resources, transformer=UpperCaseTransformer())
+
+        retried = client.post("/payload", json=SAMPLE_REQUEST)
+
+        assert retried.status_code == 201
+        assert retried.json()["id"] == SAMPLE_ID
 
 
 def test_unknown_payload_is_404(client: TestClient) -> None:

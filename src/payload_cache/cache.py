@@ -74,6 +74,11 @@ class TransformCache:
         return found
 
     def _fill(self, misses: Sequence[str]) -> dict[str, str]:
+        # All or nothing: if the transformer fails part-way, the exception propagates before
+        # anything is written, the client gets a 500 and a retry pays again for the strings
+        # that did succeed. Keeping them would need a write per call or a partial insert on
+        # the error path. A transient failure costs one request's strings again at most, and
+        # during an outage the retry fails anyway, so the simpler path was chosen.
         transformed = {value: self._transformer.transform(value) for value in misses}
         rows = [
             {
