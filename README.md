@@ -284,9 +284,10 @@ builds the Docker image, waits for `/health` and runs `cache-cli` inside the con
 - **Migrations run by the application.** The scripts ship inside the package and the
   application applies them, on start-up or through `payload-cache-migrate`, so there is no
   separate deploy artefact to keep in step with the image. The first version of this service
-  created the tables with `create_all`; a cache can be rebuilt, but a column added later (an
-  eviction marker, a transformer version) could not have been, so the schema is versioned
-  from the start rather than retrofitted under pressure.
+  created the tables with `create_all`, which can create a table but never change one. Alembic
+  came in just before the first schema change, the transformer version column, and revision 0001
+  reproduces what `create_all` built, so a database from that first version is adopted
+  rather than rebuilt (see "Schema and migrations" above).
 - **Invalidation by version, not per key.** A cached result stays valid for as long as the
   transformer behaves the same, so the one invalidation handle is the transformer version:
   bump it and every key changes. There is deliberately no endpoint to drop individual
