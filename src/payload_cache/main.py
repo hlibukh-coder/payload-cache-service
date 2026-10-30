@@ -17,13 +17,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from payload_cache.config import Settings
-from payload_cache.db import make_engine
-from payload_cache.eviction import evict_expired, purge_other_versions, run_periodically
+from payload_cache.db.engine import make_engine
+from payload_cache.db.eviction import evict_expired, purge_other_versions, run_periodically
+from payload_cache.db.migrate import ensure_at_head, upgrade_to_head
+from payload_cache.db.models import DIGEST_LENGTH
 from payload_cache.logging_setup import configure_logging
 from payload_cache.metrics import render as render_metrics
 from payload_cache.middleware import RequestContextMiddleware
-from payload_cache.models import DIGEST_LENGTH
-from payload_cache.schema import ensure_at_head, upgrade_to_head
 from payload_cache.schemas import PayloadCreated, PayloadRead, PayloadRequest
 from payload_cache.service import PayloadService
 from payload_cache.transformer import UpperCaseTransformer
@@ -212,7 +212,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session_factory = sessionmaker(engine, expire_on_commit=False)
             # Rows another transformer version produced can never be served again (the
             # version is in their keys). The version changes with the configuration, that is
-            # at a start-up, so that is where they are removed (rolling deploys: eviction.py).
+            # at a start-up, so that is where they are removed (rolling deploys: db/eviction.py).
             purge_other_versions(session_factory, settings.transformer_version)
             app.state.resources = Resources(
                 session_factory=session_factory,

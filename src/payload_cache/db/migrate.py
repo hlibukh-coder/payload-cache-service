@@ -1,6 +1,6 @@
 """Schema management: the database is brought to the current Alembic revision.
 
-The revision scripts ship inside the package (``payload_cache.migrations``), so an installed
+The revision scripts ship inside the package (``payload_cache.db.migrations``), so an installed
 application migrates its own database, either on start-up or through the
 ``payload-cache-migrate`` command, with no checkout of the repository.
 """
@@ -15,7 +15,7 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import Connection, Engine, inspect
 
 from payload_cache.config import Settings
-from payload_cache.db import make_engine
+from payload_cache.db.engine import make_engine
 from payload_cache.logging_setup import configure_logging
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"

@@ -9,17 +9,17 @@ from typing import Literal
 from pydantic import Field, PositiveInt
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from payload_cache.models import TRANSFORMER_VERSION_LENGTH
+from payload_cache.db.models import TRANSFORMER_VERSION_LENGTH
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # SQLite by default so the service runs with zero infrastructure; PostgreSQL is the
-    # other supported backend (see db.py, which refuses anything else at start-up).
+    # other supported backend (see db/engine.py, which refuses anything else at start-up).
     database_url: str = "sqlite:///./data/payload_cache.db"
 
-    # Bring the schema to the current revision on start-up (see schema.py). A deployment
+    # Bring the schema to the current revision on start-up (see db/migrate.py). A deployment
     # with several replicas turns this off and runs `payload-cache-migrate` once instead.
     run_migrations: bool = True
 
@@ -33,12 +33,12 @@ class Settings(BaseSettings):
     # Names the behaviour of the external transformer. It is hashed into every cache key and
     # payload id, so bumping it when the transformer changes turns every cached result into
     # a miss and gives new payloads new ids, while rows of other versions are purged at
-    # start-up (eviction.py). Short and URL-safe: it ends up in log lines and metrics.
+    # start-up (db/eviction.py). Short and URL-safe: it ends up in log lines and metrics.
     transformer_version: str = Field(
         default="1", pattern=rf"^[A-Za-z0-9._-]{{1,{TRANSFORMER_VERSION_LENGTH}}}$"
     )
 
-    # Rows older than this are deleted by a background sweep (eviction.py); unset, the cache
+    # Rows older than this are deleted by a background sweep (db/eviction.py); unset, the cache
     # keeps everything, which is right while the transformer is deterministic and storage
     # is not the constraint. An evicted payload answers 404 until the same request is posted
     # again, when it gets the same id back.

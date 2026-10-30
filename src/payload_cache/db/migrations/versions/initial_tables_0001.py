@@ -17,7 +17,7 @@ depends_on: Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Mirrors models.py at this revision; test_migrations.py checks that the two agree.
+    # Mirrors db/models.py at this revision; test_migrations.py checks that the two agree.
     op.create_table(
         "transformed_strings",
         sa.Column("key", sa.String(length=64), primary_key=True),

@@ -40,7 +40,7 @@ postgres = [
 
 [project.scripts]
 cache-cli = "payload_cache.cli:main"
-payload-cache-migrate = "payload_cache.schema:main"
+payload-cache-migrate = "payload_cache.db.migrate:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/payload_cache"]

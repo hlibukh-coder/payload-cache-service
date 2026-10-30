@@ -10,7 +10,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Insert
 
-from payload_cache.models import Base
+from payload_cache.db.models import Base
 
 # insert_or_ignore is spelled out for these two; anything else is refused when the engine
 # is built rather than on the first write.

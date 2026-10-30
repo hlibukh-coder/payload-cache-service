@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from payload_cache.db import make_engine
+from payload_cache.db.engine import make_engine
 
 
 def test_unsupported_databases_are_refused_before_the_first_query() -> None:

@@ -39,7 +39,7 @@ class TransformedString(Base):
     # of another version is never looked up; the column is what lets such rows be purged.
     transformer_version: Mapped[str] = mapped_column(String(TRANSFORMER_VERSION_LENGTH))
     # Not consulted when serving requests: it is what the age-based eviction sweep deletes by
-    # (eviction.py), hence the index, and what someone inspecting the table reads.
+    # (db/eviction.py), hence the index, and what someone inspecting the table reads.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, index=True
     )

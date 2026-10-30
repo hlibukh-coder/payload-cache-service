@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
-from payload_cache.db import make_engine
+from payload_cache.db.engine import make_engine
 from payload_cache.main import MAX_BODY_BYTES, MAX_LOCATION_PART_LENGTH
 from payload_cache.schemas import MAX_ITEM_LENGTH, MAX_ITEMS
 from payload_cache.transformer import UpperCaseTransformer

@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from payload_cache.models import Payload, TransformedString
+from payload_cache.db.models import Payload, TransformedString
 from payload_cache.schemas import PayloadRequest
 from payload_cache.service import CreateResult, PayloadService, interleave, payload_id_for
 from payload_cache.transformer import UpperCaseTransformer

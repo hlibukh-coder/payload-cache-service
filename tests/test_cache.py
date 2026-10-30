@@ -2,7 +2,7 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from payload_cache.cache import LOOKUP_CHUNK_SIZE, TransformCache, cache_key
-from payload_cache.models import TransformedString
+from payload_cache.db.models import TransformedString
 from payload_cache.transformer import UpperCaseTransformer
 
 

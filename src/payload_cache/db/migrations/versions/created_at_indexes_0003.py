@@ -14,7 +14,7 @@ down_revision: str | None = "0002"
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
 
-# Named as SQLAlchemy names an index=True column, so models.py and the database agree.
+# Named as SQLAlchemy names an index=True column, so db/models.py and the database agree.
 INDEXES = (
     ("ix_transformed_strings_created_at", "transformed_strings"),
     ("ix_payloads_created_at", "payloads"),

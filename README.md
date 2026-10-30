@@ -22,7 +22,7 @@ GET  /payload/512df758...
 | two lists of equal length, transformed, interleaved | `schemas.py` (validation), `service.py` (`interleave`) | `test_service.py::test_interleave_*`, `test_api.py::test_lists_of_different_length_are_rejected` |
 | cache transformer results, call the transformer as rarely as possible | `cache.py` | `test_cache.py`, `test_api.py::test_only_new_strings_reach_the_transformer` |
 | reuse the id of a payload generated before | `service.py` (`payload_id_for`) | `test_api.py::test_reposting_the_same_request_reuses_the_id` |
-| SQLite or PostgreSQL, through SQLAlchemy | `models.py`, `db.py` | the whole suite, run on both in CI |
+| SQLite or PostgreSQL, through SQLAlchemy | `db/models.py`, `db/engine.py` | the whole suite, run on both in CI |
 | Docker | `Dockerfile`, `docker-compose.yml` | the Docker job in `.github/workflows/ci.yml` |
 | `cache-cli`, parsed and sanitised with Pydantic Settings | `cli.py` | `test_cli.py` |
 | unit and integration tests | `tests/` | see [Tests](#tests) |
@@ -54,7 +54,7 @@ departures from the task text are listed under
 
 ## Caching design
 
-Two tables, both **content-addressed** (`models.py`):
+Two tables, both **content-addressed** (`db/models.py`):
 
 | table                 | key                                                   | value                         |
 |-----------------------|-------------------------------------------------------|-------------------------------|
@@ -75,9 +75,9 @@ Why this shape:
   string keys and payload ids, so bumping it turns every cached result into a miss and gives
   new payloads new ids, instead of serving under an old id an output a different transformer
   produced. Each row also records its version, which is what lets rows of other versions be
-  found and purged at start-up (`eviction.py`).
+  found and purged at start-up (`db/eviction.py`).
 - **Bounded by age, when asked.** With `CACHE_TTL_SECONDS` set, a background sweep
-  (`eviction.py`) deletes rows older than that from both tables: once at start-up, so a
+  (`db/eviction.py`) deletes rows older than that from both tables: once at start-up, so a
   service that was down for longer than the TTL starts clean, then every
   `EVICTION_INTERVAL_SECONDS` for as long as it runs; `created_at` is indexed for it
   (revision 0003). An evicted payload answers 404 until the same request is posted again,
@@ -145,8 +145,8 @@ docker compose --profile postgres up --build api-postgres   # API on :8001, Post
 ## Schema and migrations
 
 The schema is managed with Alembic. The revision scripts live inside the package
-(`src/payload_cache/migrations/`), so an installed application, the Docker image included,
-migrates its own database: on start-up by default (`schema.py` applies pending revisions in
+(`src/payload_cache/db/migrations/`), so an installed application, the Docker image included,
+migrates its own database: on start-up by default (`db/migrate.py` applies pending revisions in
 one transaction, DDL included on SQLite too, so a failure leaves the database as it was;
 nothing pending is a no-op), or as a release step:
 
@@ -165,7 +165,7 @@ recorded as revision 0001, so a service upgraded on an old volume starts normall
 0002 empties both tables: their rows were keyed without a transformer version and can never
 be looked up again; the cache refills on demand.
 
-To change the schema, edit `models.py` and generate the revision from a checkout:
+To change the schema, edit `db/models.py` and generate the revision from a checkout:
 
 ```bash
 alembic revision --autogenerate -m "describe the change"   # alembic.ini points at the package
@@ -195,7 +195,10 @@ Successful health probes and metric scrapes are logged at `DEBUG` so the access 
 about real traffic; a failing one, like every 5xx, is logged at `ERROR`. An unhandled
 exception is logged with its traceback and the request id, and answered with a 500 that
 carries the same `X-Request-ID`, so a client's bug report leads straight to the traceback.
-uvicorn's own access log is turned off because this line supersedes it.
+uvicorn's own access log is turned off because this line supersedes it. Other loggers are
+named after their module (`payload_cache.db.migrate`, `payload_cache.db.eviction`); the
+access log keeps the fixed name `payload_cache.http`, so a filter on it does not depend on
+where the middleware lives.
 
 `GET /metrics` serves Prometheus metrics (`metrics.py`):
 
@@ -381,11 +384,11 @@ src/payload_cache/
   service.py      payload id, interleaving, orchestration
   cache.py        batched lookup / fill of transformer results
   transformer.py  the simulated external service
-  models.py       ORM tables
-  db.py           engine factory, dialect-specific ON CONFLICT insert
-  schema.py       Alembic upgrade at start-up, payload-cache-migrate
+  db/models.py       ORM tables
+  db/engine.py           engine factory, dialect-specific ON CONFLICT insert
+  db/migrate.py       Alembic upgrade at start-up, payload-cache-migrate
   migrations/     Alembic environment and revision scripts (inside the package)
-  eviction.py     start-up purge of other transformer versions, TTL sweep
+  db/eviction.py     start-up purge of other transformer versions, TTL sweep
   schemas.py      API contracts, shared with the CLI
   hashing.py      canonical JSON + SHA-256
   config.py       service settings

@@ -12,9 +12,9 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from payload_cache.config import Settings
-from payload_cache.eviction import evict_expired, purge_other_versions, run_periodically
+from payload_cache.db.eviction import evict_expired, purge_other_versions, run_periodically
+from payload_cache.db.models import Payload, TransformedString
 from payload_cache.main import create_app
-from payload_cache.models import Payload, TransformedString
 from payload_cache.schemas import PayloadRequest
 from payload_cache.service import PayloadService
 from payload_cache.transformer import UpperCaseTransformer
@@ -222,9 +222,9 @@ def test_a_failing_sweep_is_logged_and_the_loop_goes_on(caplog: pytest.LogCaptur
         with suppress(asyncio.CancelledError):
             await task
 
-    with caplog.at_level(logging.ERROR, logger="payload_cache.eviction"):
+    with caplog.at_level(logging.ERROR, logger="payload_cache.db.eviction"):
         asyncio.run(run_three_sweeps())
 
     assert len(calls) >= 3
-    [record] = [r for r in caplog.records if r.name == "payload_cache.eviction"]
+    [record] = [r for r in caplog.records if r.name == "payload_cache.db.eviction"]
     assert "database is away" in record.getMessage() or "RuntimeError" in (record.exc_text or "")

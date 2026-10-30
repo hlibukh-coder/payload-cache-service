@@ -21,7 +21,7 @@ PAYLOADS = Counter(
 )
 EVICTED_ROWS = Counter(
     "payload_cache_evicted_rows_total",
-    "Cache rows removed by the clean-up in eviction.py, by table and reason.",
+    "Cache rows removed by the clean-up in db/eviction.py, by table and reason.",
     ["table", "reason"],
 )
 HTTP_REQUEST_DURATION = Histogram(

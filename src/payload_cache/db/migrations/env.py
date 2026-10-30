@@ -1,6 +1,6 @@
 """Alembic environment.
 
-Two ways in: the application (``payload_cache.schema``) hands over a connection that is
+Two ways in: the application (``payload_cache.db.migrate``) hands over a connection that is
 already inside a transaction, and the ``alembic`` command line, run from a checkout, gets an
 engine built from the same settings the service uses, so there is no second copy of the
 database URL to fall out of step. Offline ``--sql`` generation is not supported: this schema
@@ -11,8 +11,8 @@ from alembic import context
 from sqlalchemy import Connection
 
 from payload_cache.config import Settings
-from payload_cache.db import make_engine
-from payload_cache.models import Base
+from payload_cache.db.engine import make_engine
+from payload_cache.db.models import Base
 
 target_metadata = Base.metadata
 
