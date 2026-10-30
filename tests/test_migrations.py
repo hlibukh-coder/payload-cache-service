@@ -8,11 +8,11 @@ from alembic.script import ScriptDirectory
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, inspect
 
+from payload_cache.api.app import create_app
 from payload_cache.config import Settings
 from payload_cache.db import migrate
 from payload_cache.db.engine import make_engine
 from payload_cache.db.models import Base
-from payload_cache.main import create_app
 from tests.conftest import SAMPLE_REQUEST
 
 TABLES = {"payloads", "transformed_strings"}

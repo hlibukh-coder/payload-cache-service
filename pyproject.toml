@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     # First release whose Starlette pin has no upper bound; earlier ones cap Starlette below
-    # what main.py imports.
+    # what api/app.py imports.
     "fastapi>=0.134",
     # RequestBodyLimitMiddleware ships from 1.6 (and the TestClient has been an httpx2.Client
     # since 1.2). FastAPI itself only guarantees >=0.46, so the floor the app needs is stated.

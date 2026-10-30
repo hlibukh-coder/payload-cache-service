@@ -5,10 +5,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
+from payload_cache.api.app import MAX_BODY_BYTES, MAX_LOCATION_PART_LENGTH
+from payload_cache.api.schemas import MAX_ITEM_LENGTH, MAX_ITEMS
 from payload_cache.core.transformer import UpperCaseTransformer
 from payload_cache.db.engine import make_engine
-from payload_cache.main import MAX_BODY_BYTES, MAX_LOCATION_PART_LENGTH
-from payload_cache.schemas import MAX_ITEM_LENGTH, MAX_ITEMS
 from tests.conftest import SAMPLE_ID, SAMPLE_OUTPUT, SAMPLE_REQUEST, FailingTransformer
 
 JSON = {"content-type": "application/json"}

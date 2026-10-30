@@ -18,8 +18,8 @@ GET  /payload/512df758...
 
 | requirement | where | shown by |
 |---|---|---|
-| create and read payloads, the create call returns an id | `main.py`: `POST /payload`, `GET /payload/{id}` | `test_api.py::test_create_then_read_returns_the_documented_output` |
-| two lists of equal length, transformed, interleaved | `schemas.py` (validation), `core/service.py` (`interleave`) | `test_service.py::test_interleave_*`, `test_api.py::test_lists_of_different_length_are_rejected` |
+| create and read payloads, the create call returns an id | `api/app.py`: `POST /payload`, `GET /payload/{id}` | `test_api.py::test_create_then_read_returns_the_documented_output` |
+| two lists of equal length, transformed, interleaved | `api/schemas.py` (validation), `core/service.py` (`interleave`) | `test_service.py::test_interleave_*`, `test_api.py::test_lists_of_different_length_are_rejected` |
 | cache transformer results, call the transformer as rarely as possible | `core/cache.py` | `test_cache.py`, `test_api.py::test_only_new_strings_reach_the_transformer` |
 | reuse the id of a payload generated before | `core/service.py` (`payload_id_for`) | `test_api.py::test_reposting_the_same_request_reuses_the_id` |
 | SQLite or PostgreSQL, through SQLAlchemy | `db/models.py`, `db/engine.py` | the whole suite, run on both in CI |
@@ -37,7 +37,7 @@ departures from the task text are listed under
 
 ## How a request flows
 
-1. **`main.py`** – `POST /payload` validates the body against `schemas.PayloadRequest`
+1. **`api/app.py`** – `POST /payload` validates the body against `schemas.PayloadRequest`
    (two non-empty, bounded lists of strings of equal length, no unknown fields) and hands
    it to `PayloadService` with a request-scoped SQLAlchemy session.
 2. **`core/service.py`** – derives the payload id from the canonical JSON of the request and the
@@ -101,7 +101,7 @@ Why this shape:
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-uvicorn --factory payload_cache.main:create_app --reload
+uvicorn --factory payload_cache.api.app:create_app --reload
 ```
 
 Interactive docs: <http://localhost:8000/docs>. Configuration is read from the environment
@@ -178,7 +178,7 @@ change without a revision fails the suite instead of surfacing at deployment.
 ## Observability
 
 Every log line is one JSON object on stdout, uvicorn's own lines included, so a log shipper
-needs no parsing rules. The middleware in `middleware.py` gives each request an id, taken
+needs no parsing rules. The middleware in `api/middleware.py` gives each request an id, taken
 from an incoming `X-Request-ID` header when it looks like an identifier and generated
 otherwise, returns it in the response and tags every log line written while the request is
 being handled (`observability/logs.py` reads it from a context variable, so handlers and the
@@ -331,8 +331,8 @@ builds the Docker image, waits for `/health` and runs `cache-cli` inside the con
   lock across processes), which costs more than the occasional duplicate.
 - **Strict request validation.** Unknown fields and empty lists are rejected (HTTP 422):
   both almost certainly indicate a client bug, and an empty payload is not useful. Requests
-  are bounded as well (`schemas.py`: 1 000 strings per list, 1 000 characters per string;
-  `main.py`: 16 MiB body, HTTP 413 beyond that), so one anonymous POST cannot queue tens of thousands
+  are bounded as well (`api/schemas.py`: 1 000 strings per list, 1 000 characters per string;
+  `api/app.py`: 16 MiB body, HTTP 413 beyond that), so one anonymous POST cannot queue tens of thousands
   of transformer calls or fill the cache with megabyte-sized rows. Strings that are legal
   JSON but can be neither hashed nor stored (NUL characters, lone surrogates) get a 422
   instead of failing with a 500 half-way through.
@@ -377,8 +377,8 @@ builds the Docker image, waits for `/health` and runs `cache-cli` inside the con
 
 ```
 src/payload_cache/
-  main.py         FastAPI app factory, routes, dependencies
-  middleware.py   request id + access-log line (raw ASGI)
+  api/app.py         FastAPI app factory, routes, dependencies
+  api/middleware.py   request id + access-log line (raw ASGI)
   observability/logs.py JSON log formatter, uvicorn loggers redirected
   observability/metrics.py      Prometheus collectors and the exposition for /metrics
   core/service.py      payload id, interleaving, orchestration
@@ -389,7 +389,7 @@ src/payload_cache/
   db/migrate.py       Alembic upgrade at start-up, payload-cache-migrate
   migrations/     Alembic environment and revision scripts (inside the package)
   db/eviction.py     start-up purge of other transformer versions, TTL sweep
-  schemas.py      API contracts, shared with the CLI
+  api/schemas.py      API contracts, shared with the CLI
   core/hashing.py      canonical JSON + SHA-256
   config.py       service settings
   cli.py          cache-cli

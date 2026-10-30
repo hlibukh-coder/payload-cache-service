@@ -16,6 +16,8 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
+from payload_cache.api.middleware import RequestContextMiddleware
+from payload_cache.api.schemas import PayloadCreated, PayloadRead, PayloadRequest
 from payload_cache.config import Settings
 from payload_cache.core.service import PayloadService
 from payload_cache.core.transformer import UpperCaseTransformer
@@ -23,10 +25,8 @@ from payload_cache.db.engine import make_engine
 from payload_cache.db.eviction import evict_expired, purge_other_versions, run_periodically
 from payload_cache.db.migrate import ensure_at_head, upgrade_to_head
 from payload_cache.db.models import DIGEST_LENGTH
-from payload_cache.middleware import RequestContextMiddleware
 from payload_cache.observability.logs import configure_logging
 from payload_cache.observability.metrics import render as render_metrics
-from payload_cache.schemas import PayloadCreated, PayloadRead, PayloadRequest
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,7 @@ def get_service(resources: ResourcesDep, session: SessionDep) -> PayloadService:
 ServiceDep = Annotated[PayloadService, Depends(get_service)]
 
 # Coarse guard applied before the body is read into memory and parsed; the schema bounds in
-# schemas.py are the real limit. 2 * MAX_ITEMS strings of MAX_ITEM_LENGTH characters take
+# api/schemas.py are the real limit. 2 * MAX_ITEMS strings of MAX_ITEM_LENGTH characters take
 # 2 MB as ASCII and 12 MB with every character \u-escaped. The one in-bounds shape that does
 # not fit is text outside the BMP escaped as surrogate pairs (12 bytes per character, up to
 # 24 MB); it gets 413 instead of 422, accepted rather than doubling the memory one request

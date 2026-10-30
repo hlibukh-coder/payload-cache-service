@@ -25,7 +25,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
-from payload_cache.schemas import PayloadCreated, PayloadRead, PayloadRequest
+from payload_cache.api.schemas import PayloadCreated, PayloadRead, PayloadRequest
 
 # Conventional spelling for "use stdin / stdout instead of a file".
 STDIO = "-"

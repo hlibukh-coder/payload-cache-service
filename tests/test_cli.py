@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from payload_cache import cli
+from payload_cache.api.schemas import PayloadRequest
 from payload_cache.cli import CliSettings, load_request, main, run
-from payload_cache.schemas import PayloadRequest
 from tests.conftest import SAMPLE_OUTPUT, SAMPLE_REQUEST
 
 SAMPLE_JSON = json.dumps(SAMPLE_REQUEST)
