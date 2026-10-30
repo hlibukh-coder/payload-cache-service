@@ -16,7 +16,7 @@ from sqlalchemy import Connection, Engine, inspect
 
 from payload_cache.config import Settings
 from payload_cache.db.engine import make_engine
-from payload_cache.logging_setup import configure_logging
+from payload_cache.observability.logs import configure_logging
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 

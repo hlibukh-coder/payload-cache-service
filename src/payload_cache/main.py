@@ -23,9 +23,9 @@ from payload_cache.db.engine import make_engine
 from payload_cache.db.eviction import evict_expired, purge_other_versions, run_periodically
 from payload_cache.db.migrate import ensure_at_head, upgrade_to_head
 from payload_cache.db.models import DIGEST_LENGTH
-from payload_cache.logging_setup import configure_logging
-from payload_cache.metrics import render as render_metrics
 from payload_cache.middleware import RequestContextMiddleware
+from payload_cache.observability.logs import configure_logging
+from payload_cache.observability.metrics import render as render_metrics
 from payload_cache.schemas import PayloadCreated, PayloadRead, PayloadRequest
 
 

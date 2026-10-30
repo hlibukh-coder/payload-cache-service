@@ -11,7 +11,7 @@ from payload_cache.core.hashing import canonical_json, sha256_hex
 from payload_cache.core.transformer import Transformer
 from payload_cache.db.engine import insert_or_ignore
 from payload_cache.db.models import Payload
-from payload_cache.metrics import PAYLOADS
+from payload_cache.observability.metrics import PAYLOADS
 from payload_cache.schemas import PayloadRequest
 
 

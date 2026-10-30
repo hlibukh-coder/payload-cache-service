@@ -19,7 +19,7 @@ from sqlalchemy import CursorResult, delete
 from sqlalchemy.orm import Session, sessionmaker
 
 from payload_cache.db.models import Payload, TransformedString
-from payload_cache.metrics import EVICTED_ROWS
+from payload_cache.observability.metrics import EVICTED_ROWS
 
 logger = logging.getLogger(__name__)
 

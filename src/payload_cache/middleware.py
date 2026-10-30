@@ -13,8 +13,8 @@ from uuid import uuid4
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from payload_cache.logging_setup import request_id_var
-from payload_cache.metrics import HTTP_REQUEST_DURATION, UNMATCHED_ROUTE
+from payload_cache.observability.logs import request_id_var
+from payload_cache.observability.metrics import HTTP_REQUEST_DURATION, UNMATCHED_ROUTE
 
 logger = logging.getLogger("payload_cache.http")
 

@@ -181,7 +181,7 @@ Every log line is one JSON object on stdout, uvicorn's own lines included, so a 
 needs no parsing rules. The middleware in `middleware.py` gives each request an id, taken
 from an incoming `X-Request-ID` header when it looks like an identifier and generated
 otherwise, returns it in the response and tags every log line written while the request is
-being handled (`logging_setup.py` reads it from a context variable, so handlers and the
+being handled (`observability/logs.py` reads it from a context variable, so handlers and the
 cache do not pass it around). One access-log line per request names the method, the route
 template, the status and the duration:
 
@@ -200,7 +200,7 @@ named after their module (`payload_cache.db.migrate`, `payload_cache.db.eviction
 access log keeps the fixed name `payload_cache.http`, so a filter on it does not depend on
 where the middleware lives.
 
-`GET /metrics` serves Prometheus metrics (`metrics.py`):
+`GET /metrics` serves Prometheus metrics (`observability/metrics.py`):
 
 | metric                                         | labels                      | meaning                                                                 |
 |------------------------------------------------|-----------------------------|-------------------------------------------------------------------------|
@@ -379,8 +379,8 @@ builds the Docker image, waits for `/health` and runs `cache-cli` inside the con
 src/payload_cache/
   main.py         FastAPI app factory, routes, dependencies
   middleware.py   request id + access-log line (raw ASGI)
-  logging_setup.py JSON log formatter, uvicorn loggers redirected
-  metrics.py      Prometheus collectors and the exposition for /metrics
+  observability/logs.py JSON log formatter, uvicorn loggers redirected
+  observability/metrics.py      Prometheus collectors and the exposition for /metrics
   core/service.py      payload id, interleaving, orchestration
   core/cache.py        batched lookup / fill of transformer results
   core/transformer.py  the simulated external service

@@ -15,7 +15,7 @@ from payload_cache.core.hashing import canonical_json, sha256_hex
 from payload_cache.core.transformer import Transformer
 from payload_cache.db.engine import insert_or_ignore
 from payload_cache.db.models import TransformedString
-from payload_cache.metrics import TRANSFORM_STRINGS
+from payload_cache.observability.metrics import TRANSFORM_STRINGS
 
 # SQLite builds used to cap a statement at 999 bound parameters; chunking the lookups keeps
 # every backend comfortably below any such limit.

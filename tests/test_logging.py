@@ -6,8 +6,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from payload_cache.logging_setup import JsonFormatter, configure_logging, request_id_var
 from payload_cache.middleware import REQUEST_ID_HEADER
+from payload_cache.observability.logs import JsonFormatter, configure_logging, request_id_var
 from tests.conftest import SAMPLE_REQUEST
 
 HEX_32 = 32

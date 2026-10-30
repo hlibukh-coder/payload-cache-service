@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Log SQL statements (through the JSON log); handy when checking the caching by hand.
     echo_sql: bool = False
 
-    # Threshold for the JSON log on stdout (see logging_setup.py). Health-probe access lines
+    # Threshold for the JSON log on stdout (see observability/logs.py). Health-probe access lines
     # sit at DEBUG, so INFO keeps the log about real requests.
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
