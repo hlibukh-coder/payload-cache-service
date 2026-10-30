@@ -48,6 +48,13 @@ packages = ["src/payload_cache"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+# A connection or file left open is a leak in the code under test or in a fixture; fail on
+# it rather than print a warning nobody reads. Other warnings stay warnings, so a new
+# deprecation in a floating dependency does not break CI on its own.
+filterwarnings = [
+    "error::ResourceWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
 
 [tool.ruff]
 line-length = 100

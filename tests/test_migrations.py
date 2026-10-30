@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+
 import pytest
 from alembic import command, op
 from alembic.autogenerate import compare_metadata
@@ -17,8 +19,10 @@ TABLES = {"payloads", "transformed_strings"}
 
 
 @pytest.fixture
-def engine(database_url: str) -> Engine:
-    return make_engine(database_url)
+def engine(database_url: str) -> Iterator[Engine]:
+    engine = make_engine(database_url)
+    yield engine
+    engine.dispose()
 
 
 def current_revision(engine: Engine) -> str | None:
