@@ -9,7 +9,9 @@ from typing import Literal
 from pydantic import Field, PositiveInt
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from payload_cache.db.models import TRANSFORMER_VERSION_LENGTH
+# Longest transformer version accepted. The column that stores it (db/models.py) is sized
+# from this, so configuration sits below the database layer and imports nothing from it.
+TRANSFORMER_VERSION_LENGTH = 32
 
 
 class Settings(BaseSettings):

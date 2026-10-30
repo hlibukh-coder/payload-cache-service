@@ -11,10 +11,10 @@ from datetime import UTC, datetime
 from sqlalchemy import DateTime, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from payload_cache.config import TRANSFORMER_VERSION_LENGTH
+
 # Length of a hex-encoded SHA-256 digest.
 DIGEST_LENGTH = 64
-# Bound on the configured transformer version (config.py validates against it).
-TRANSFORMER_VERSION_LENGTH = 32
 
 
 def _utcnow() -> datetime:

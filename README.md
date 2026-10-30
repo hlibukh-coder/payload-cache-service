@@ -412,7 +412,8 @@ Dockerfile, docker-compose.yml
 .github/workflows/ci.yml
 ```
 
-`api/app.py` wires the packages together at start-up. Below it, `core` stores its results
-through `db`, `db` imports nothing from `core` or `api`, and `observability` imports none of
-the others. The one import that points upwards is `core/service.py` taking its request type
-from `api/schemas.py`, the contract the HTTP layer, the service and the CLI share.
+`config.py` and `observability/` sit at the bottom and import nothing else from the package.
+`db` builds on them, `core` stores its results through `db`, and `api/app.py` wires
+everything together at start-up. The one import that points upwards is `core/service.py`
+taking its request type from `api/schemas.py`, the contract the HTTP layer, the service and
+`cli.py` share.
