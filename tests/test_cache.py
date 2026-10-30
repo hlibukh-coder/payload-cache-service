@@ -1,9 +1,9 @@
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from payload_cache.cache import LOOKUP_CHUNK_SIZE, TransformCache, cache_key
+from payload_cache.core.cache import LOOKUP_CHUNK_SIZE, TransformCache, cache_key
+from payload_cache.core.transformer import UpperCaseTransformer
 from payload_cache.db.models import TransformedString
-from payload_cache.transformer import UpperCaseTransformer
 
 
 def test_results_map_each_original_to_its_transformation(

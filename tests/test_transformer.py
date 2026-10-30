@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from payload_cache.config import Settings
-from payload_cache.transformer import UpperCaseTransformer
+from payload_cache.core.transformer import UpperCaseTransformer
 
 
 def test_transform_upper_cases() -> None:

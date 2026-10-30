@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from payload_cache.cache import TransformCache
+from payload_cache.core.cache import TransformCache
+from payload_cache.core.hashing import canonical_json, sha256_hex
+from payload_cache.core.transformer import Transformer
 from payload_cache.db.engine import insert_or_ignore
 from payload_cache.db.models import Payload
-from payload_cache.hashing import canonical_json, sha256_hex
 from payload_cache.metrics import PAYLOADS
 from payload_cache.schemas import PayloadRequest
-from payload_cache.transformer import Transformer
 
 
 @dataclass(frozen=True)

@@ -9,11 +9,11 @@ from sqlalchemy import MetaData
 from sqlalchemy.orm import Session, sessionmaker
 
 from payload_cache.config import Settings
+from payload_cache.core.transformer import UpperCaseTransformer
 from payload_cache.db.engine import make_engine
 from payload_cache.db.migrate import upgrade_to_head
 from payload_cache.main import create_app
 from payload_cache.schemas import PayloadRequest
-from payload_cache.transformer import UpperCaseTransformer
 
 # The example from the task statement, used as the reference case throughout.
 SAMPLE_REQUEST = {

@@ -1,4 +1,4 @@
-from payload_cache.hashing import canonical_json, sha256_hex
+from payload_cache.core.hashing import canonical_json, sha256_hex
 
 
 def test_sha256_hex_matches_known_vector() -> None:

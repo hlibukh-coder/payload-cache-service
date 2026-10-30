@@ -19,9 +19,9 @@ GET  /payload/512df758...
 | requirement | where | shown by |
 |---|---|---|
 | create and read payloads, the create call returns an id | `main.py`: `POST /payload`, `GET /payload/{id}` | `test_api.py::test_create_then_read_returns_the_documented_output` |
-| two lists of equal length, transformed, interleaved | `schemas.py` (validation), `service.py` (`interleave`) | `test_service.py::test_interleave_*`, `test_api.py::test_lists_of_different_length_are_rejected` |
-| cache transformer results, call the transformer as rarely as possible | `cache.py` | `test_cache.py`, `test_api.py::test_only_new_strings_reach_the_transformer` |
-| reuse the id of a payload generated before | `service.py` (`payload_id_for`) | `test_api.py::test_reposting_the_same_request_reuses_the_id` |
+| two lists of equal length, transformed, interleaved | `schemas.py` (validation), `core/service.py` (`interleave`) | `test_service.py::test_interleave_*`, `test_api.py::test_lists_of_different_length_are_rejected` |
+| cache transformer results, call the transformer as rarely as possible | `core/cache.py` | `test_cache.py`, `test_api.py::test_only_new_strings_reach_the_transformer` |
+| reuse the id of a payload generated before | `core/service.py` (`payload_id_for`) | `test_api.py::test_reposting_the_same_request_reuses_the_id` |
 | SQLite or PostgreSQL, through SQLAlchemy | `db/models.py`, `db/engine.py` | the whole suite, run on both in CI |
 | Docker | `Dockerfile`, `docker-compose.yml` | the Docker job in `.github/workflows/ci.yml` |
 | `cache-cli`, parsed and sanitised with Pydantic Settings | `cli.py` | `test_cli.py` |
@@ -40,14 +40,14 @@ departures from the task text are listed under
 1. **`main.py`** – `POST /payload` validates the body against `schemas.PayloadRequest`
    (two non-empty, bounded lists of strings of equal length, no unknown fields) and hands
    it to `PayloadService` with a request-scoped SQLAlchemy session.
-2. **`service.py`** – derives the payload id from the canonical JSON of the request and the
+2. **`core/service.py`** – derives the payload id from the canonical JSON of the request and the
    transformer version. If a payload with that id already exists the id is returned
    immediately (HTTP 200) without touching the transformer.
-3. **`cache.py`** – otherwise every distinct string from both lists is looked up in
+3. **`core/cache.py`** – otherwise every distinct string from both lists is looked up in
    `transformed_strings` in one query (chunked for very large inputs), under keys that also
    include the transformer version. Only strings that were never seen are sent to the
    transformer, and their results are written back with `INSERT ... ON CONFLICT DO NOTHING`.
-4. **`service.py`** – interleaves the transformed strings (`a1, b1, a2, b2, ...`), stores
+4. **`core/service.py`** – interleaves the transformed strings (`a1, b1, a2, b2, ...`), stores
    the payload under its id (again `ON CONFLICT DO NOTHING`, with `RETURNING` to tell
    whether this request or a concurrent one created it) and commits.
 5. `GET /payload/{id}` is a primary-key lookup on `payloads`.
@@ -381,16 +381,16 @@ src/payload_cache/
   middleware.py   request id + access-log line (raw ASGI)
   logging_setup.py JSON log formatter, uvicorn loggers redirected
   metrics.py      Prometheus collectors and the exposition for /metrics
-  service.py      payload id, interleaving, orchestration
-  cache.py        batched lookup / fill of transformer results
-  transformer.py  the simulated external service
+  core/service.py      payload id, interleaving, orchestration
+  core/cache.py        batched lookup / fill of transformer results
+  core/transformer.py  the simulated external service
   db/models.py       ORM tables
   db/engine.py           engine factory, dialect-specific ON CONFLICT insert
   db/migrate.py       Alembic upgrade at start-up, payload-cache-migrate
   migrations/     Alembic environment and revision scripts (inside the package)
   db/eviction.py     start-up purge of other transformer versions, TTL sweep
   schemas.py      API contracts, shared with the CLI
-  hashing.py      canonical JSON + SHA-256
+  core/hashing.py      canonical JSON + SHA-256
   config.py       service settings
   cli.py          cache-cli
 tests/            unit and integration tests (pytest)
