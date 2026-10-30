@@ -14,6 +14,27 @@ GET  /payload/512df758...
   -> 200 {"output": "FIRST STRING, OTHER STRING, SECOND STRING, ANOTHER STRING, ..."}
 ```
 
+## The task, requirement by requirement
+
+| requirement | where | shown by |
+|---|---|---|
+| create and read payloads, the create call returns an id | `main.py`: `POST /payload`, `GET /payload/{id}` | `test_api.py::test_create_then_read_returns_the_documented_output` |
+| two lists of equal length, transformed, interleaved | `schemas.py` (validation), `service.py` (`interleave`) | `test_service.py::test_interleave_*`, `test_api.py::test_lists_of_different_length_are_rejected` |
+| cache transformer results, call the transformer as rarely as possible | `cache.py` | `test_cache.py`, `test_api.py::test_only_new_strings_reach_the_transformer` |
+| reuse the id of a payload generated before | `service.py` (`payload_id_for`) | `test_api.py::test_reposting_the_same_request_reuses_the_id` |
+| SQLite or PostgreSQL, through SQLAlchemy | `models.py`, `db.py` | the whole suite, run on both in CI |
+| Docker | `Dockerfile`, `docker-compose.yml` | the Docker job in `.github/workflows/ci.yml` |
+| `cache-cli`, parsed and sanitised with Pydantic Settings | `cli.py` | `test_cli.py` |
+| unit and integration tests | `tests/` | see [Tests](#tests) |
+
+Beyond the brief, and not needed to meet it: Alembic migrations, the transformer version in
+every key, an optional TTL, JSON logs with request ids, Prometheus metrics and CI. Each is
+there because the task asks for code reviewed "as if you are submitting code to our
+product". Their reasons and trade-offs are in "Caching design", "Schema and migrations",
+"Observability", the end of "Tests" and "Decisions and trade-offs" below. The deliberate
+departures from the task text are listed under
+[Deviations from the task statement](#deviations-from-the-task-statement).
+
 ## How a request flows
 
 1. **`main.py`** – `POST /payload` validates the body against `schemas.PayloadRequest`
