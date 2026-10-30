@@ -92,7 +92,7 @@ Interactive docs: <http://localhost:8000/docs>. Configuration is read from the e
 | `RUN_MIGRATIONS`              | `true`                               | migrate the schema on start-up (see below) |
 | `ECHO_SQL`                    | `false`                              | log every SQL statement                   |
 | `LOG_LEVEL`                   | `INFO`                               | threshold of the JSON log on stdout       |
-| `TRANSFORMER_LATENCY_SECONDS` | `0`                                  | simulate a slow external service          |
+| `TRANSFORMER_LATENCY_SECONDS` | `0`                                  | simulate a slow external service (0 to 60 s) |
 | `TRANSFORMER_VERSION`         | `1`                                  | hashed into every cache key; bump it when the transformer changes |
 | `CACHE_TTL_SECONDS`           | unset                                | delete cache rows older than this (unset: keep everything) |
 | `EVICTION_INTERVAL_SECONDS`   | `300`                                | how often the TTL sweep runs              |

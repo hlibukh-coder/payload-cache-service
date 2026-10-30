@@ -49,5 +49,8 @@ class Settings(BaseSettings):
     eviction_interval_seconds: PositiveInt = 300
 
     # Artificial delay per transformer call. The transformer stands in for an external
-    # service, and a non-zero delay makes cache hits visibly cheaper than misses.
-    transformer_latency_seconds: float = 0.0
+    # service, and a non-zero delay makes cache hits visibly cheaper than misses. Bounded
+    # here because time.sleep() rejects a negative, NaN, infinite or very large delay, which
+    # would otherwise turn every cache miss into a 500 instead of failing the start-up. A
+    # minute is far more than any demo needs and far below where sleep() overflows.
+    transformer_latency_seconds: float = Field(default=0.0, ge=0, le=60, allow_inf_nan=False)
