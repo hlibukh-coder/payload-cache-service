@@ -315,6 +315,37 @@ def test_main_reports_unexpected_response_bodies(
     assert "unexpected response" in capsys.readouterr().err
 
 
+def test_main_fails_when_the_service_disagrees_with_itself(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A broken service that hands out a new id for every POST of the same request: exactly
+    # the cache failure --repeat is there to catch.
+    issued: list[str] = []
+
+    def unstable(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "GET" and request.url.path == "/health":
+            return httpx2.Response(200, json={"status": "ok"})
+        if request.method == "POST":
+            issued.append(f"{len(issued):064x}")
+            return httpx2.Response(201, json={"id": issued[-1], "message": "Payload created."})
+        return httpx2.Response(200, json={"output": SAMPLE_OUTPUT})
+
+    monkeypatch.setattr(
+        cli,
+        "make_client",
+        lambda base_url: httpx2.Client(base_url=base_url, transport=httpx2.MockTransport(unstable)),
+    )
+
+    assert main(["-j", SAMPLE_JSON, "-r", "2"]) == 1
+
+    captured = capsys.readouterr()
+    assert "disagreed with itself" in captured.err
+    # The report is still written, so the ids per run show where the service went wrong.
+    report = json.loads(captured.out)
+    assert report["consistent"] is False
+    assert [item["id"] for item in report["runs"]] == issued
+
+
 def test_main_reports_http_errors(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
