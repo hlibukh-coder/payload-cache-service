@@ -1,11 +1,7 @@
-import asyncio
-import logging
 import time
 from collections.abc import Callable
-from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from fastapi.testclient import TestClient
 from prometheus_client import REGISTRY
 from sqlalchemy import func, select, update
@@ -16,7 +12,7 @@ from payload_cache.api.schemas import PayloadRequest
 from payload_cache.config import Settings
 from payload_cache.core.service import PayloadService
 from payload_cache.core.transformer import UpperCaseTransformer
-from payload_cache.db.eviction import evict_expired, purge_other_versions, run_periodically
+from payload_cache.db.eviction import evict_expired, purge_other_versions
 from payload_cache.db.models import Payload, TransformedString
 from tests.conftest import SAMPLE_OUTPUT, SAMPLE_REQUEST
 
@@ -200,31 +196,3 @@ def test_without_a_ttl_nothing_is_swept(
         assert client.get("/health").status_code == 200
     with session_factory() as session:
         assert count(session, Payload) == 1
-
-
-def test_a_failing_sweep_is_logged_and_the_loop_goes_on(caplog: pytest.LogCaptureFixture) -> None:
-    calls: list[int] = []
-
-    def sweep() -> None:
-        calls.append(len(calls))
-        if len(calls) == 1:
-            raise RuntimeError("database is away")
-
-    async def run_three_sweeps() -> None:
-        # The first tick comes after one interval; the loop then keeps going past a failure.
-        task = asyncio.create_task(run_periodically(sweep, interval_seconds=0.001))
-        # Bounded, so a loop that died on the first failure fails the test instead of hanging.
-        async with asyncio.timeout(5):
-            while len(calls) < 3:
-                assert not task.done(), task
-                await asyncio.sleep(0.001)
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
-
-    with caplog.at_level(logging.ERROR, logger="payload_cache.db.eviction"):
-        asyncio.run(run_three_sweeps())
-
-    assert len(calls) >= 3
-    [record] = [r for r in caplog.records if r.name == "payload_cache.db.eviction"]
-    assert "database is away" in record.getMessage() or "RuntimeError" in (record.exc_text or "")

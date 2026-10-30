@@ -1,7 +1,7 @@
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from payload_cache.core.cache import LOOKUP_CHUNK_SIZE, TransformCache, cache_key
+from payload_cache.core.cache import LOOKUP_CHUNK_SIZE, TransformCache
 from payload_cache.core.transformer import UpperCaseTransformer
 from payload_cache.db.models import TransformedString
 
@@ -100,8 +100,3 @@ def test_a_different_transformer_version_does_not_share_cached_results(
     assert transformer.calls == 4
     TransformCache(session, transformer, "1").transform_many(["a", "b"])
     assert transformer.calls == 4
-
-
-def test_cache_keys_differ_by_version_and_are_digests() -> None:
-    assert cache_key("a", "1") != cache_key("a", "2")
-    assert len(cache_key("a", "1")) == 64

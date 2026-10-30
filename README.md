@@ -18,14 +18,14 @@ GET  /payload/512df758...
 
 | requirement | where | shown by |
 |---|---|---|
-| create and read payloads, the create call returns an id | `api/app.py`: `POST /payload`, `GET /payload/{id}` | `test_api.py::test_create_then_read_returns_the_documented_output` |
-| two lists of equal length, transformed, interleaved | `api/schemas.py` (validation), `core/service.py` (`interleave`) | `test_service.py::test_interleave_*`, `test_api.py::test_lists_of_different_length_are_rejected` |
-| cache transformer results, call the transformer as rarely as possible | `core/cache.py` | `test_cache.py`, `test_api.py::test_only_new_strings_reach_the_transformer` |
-| reuse the id of a payload generated before | `core/service.py` (`payload_id_for`) | `test_api.py::test_reposting_the_same_request_reuses_the_id` |
+| create and read payloads, the create call returns an id | `api/app.py`: `POST /payload`, `GET /payload/{id}` | `integration/test_api.py::test_create_then_read_returns_the_documented_output` |
+| two lists of equal length, transformed, interleaved | `api/schemas.py` (validation), `core/service.py` (`interleave`) | `unit/test_payload.py::test_interleave_*`, `integration/test_api.py::test_lists_of_different_length_are_rejected` |
+| cache transformer results, call the transformer as rarely as possible | `core/cache.py` | `integration/test_cache.py`, `integration/test_api.py::test_only_new_strings_reach_the_transformer` |
+| reuse the id of a payload generated before | `core/service.py` (`payload_id_for`) | `integration/test_api.py::test_reposting_the_same_request_reuses_the_id` |
 | SQLite or PostgreSQL, through SQLAlchemy | `db/models.py`, `db/engine.py` | the whole suite, run on both in CI |
 | Docker | `Dockerfile`, `docker-compose.yml` | the Docker job in `.github/workflows/ci.yml` |
-| `cache-cli`, parsed and sanitised with Pydantic Settings | `cli.py` | `test_cli.py` |
-| unit and integration tests | `tests/` | see [Tests](#tests) |
+| `cache-cli`, parsed and sanitised with Pydantic Settings | `cli.py` | `unit/test_cli_arguments.py`, `integration/test_cli.py` |
+| unit and integration tests | `tests/unit/`, `tests/integration/` | see [Tests](#tests) |
 
 Beyond the brief, and not needed to meet it: Alembic migrations, the transformer version in
 every key, an optional TTL, JSON logs with request ids, Prometheus metrics and CI. Each is
@@ -92,7 +92,7 @@ Why this shape:
   inserted in key order, so two requests racing on overlapping strings queue behind each
   other instead of deadlocking on PostgreSQL, where an `ON CONFLICT` insert waits for an
   uncommitted row with the same key. The two `test_concurrent_*` tests in
-  `tests/test_service.py` pin both properties down with threads.
+  `tests/integration/test_service.py` pin both properties down with threads.
 
 ## Running it
 
@@ -172,7 +172,7 @@ alembic revision --autogenerate -m "describe the change"   # alembic.ini points 
 alembic upgrade head
 ```
 
-`test_migrations.py` compares the migrated schema with the models on every run, so a model
+`tests/integration/test_migrations.py` compares the migrated schema with the models on every run, so a model
 change without a revision fails the suite instead of surfacing at deployment.
 
 ## Observability
@@ -261,20 +261,25 @@ unwritable report location.
 ## Tests
 
 ```bash
-pytest
+pytest                      # everything
+pytest tests/unit           # no database, well under a second
 ruff check . && ruff format --check . && mypy
 ```
 
-- **Unit:** hashing, the transformer, output interleaving, id determinism, cache keys, CLI
-  parsing, the JSON log formatter, the eviction sweep and its retry loop.
-- **Integration:** the cache and service against a real database, the documented example
-  through the HTTP API, the transformer failing part-way through a request (nothing is
-  stored, the client gets a 500, a retry succeeds), concurrent identical and overlapping
-  requests, request ids and
-  access-log lines, metric deltas through `/metrics`, migrations up and down (and the migrated
-  schema diffed against the models), a transformer-version bump across two application
-  start-ups, the TTL sweep running at start-up and on its timer, and `cache-cli` end to end
-  against the application.
+- **`tests/unit/`**: hashing and cache keys, the transformer and its latency setting,
+  output interleaving and payload ids, CLI argument parsing, request loading and exit codes
+  (the service replaced by a mock transport), the JSON log formatter, and the eviction loop
+  surviving a failed sweep.
+- **`tests/integration/`**: everything against a real database and the application running
+  in process. The cache and service, the documented example through the HTTP API, the
+  transformer failing part-way through a request (nothing is stored, the client gets a 500,
+  a retry succeeds), concurrent identical and overlapping requests, request ids and
+  access-log lines, metric deltas through `/metrics`, migrations up and down (and the
+  migrated schema diffed against the models), a transformer-version bump across two
+  application start-ups, the TTL sweep at start-up and on its timer, and `cache-cli` end to
+  end against the application.
+
+Shared fixtures and the example request live in `tests/conftest.py`.
 
 The suite runs against PostgreSQL as well, which exercises the PostgreSQL branch of the
 one dialect-specific statement and the deadlock regression test. It drops and recreates the
