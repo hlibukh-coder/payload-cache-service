@@ -95,6 +95,26 @@ def test_missing_input_file_is_rejected(tmp_path: Path) -> None:
         parse("-i", str(tmp_path / "missing.json"))
 
 
+def test_empty_input_path_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="input file name is empty"):
+        parse("-i", "")
+
+
+def test_a_file_named_with_spaces_is_an_ordinary_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Only "" is the current directory; " " is a legal file name.
+    monkeypatch.chdir(tmp_path)
+    Path(" ").write_text(SAMPLE_JSON)
+
+    assert parse("-i", " ").input == " "
+
+
+def test_directory_as_input_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="input path is a directory"):
+        parse("-i", str(tmp_path))
+
+
 def test_output_location_is_checked_up_front(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match="directory not found"):
         parse("-j", "{}", "-o", str(tmp_path / "missing" / "report.json"))
@@ -233,6 +253,22 @@ def test_main_reports_a_directory_given_as_input(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["-i", str(tmp_path)]) == 2
+
+    err = capsys.readouterr().err
+    assert "invalid arguments" in err
+    assert "-i/--input" in err
+    assert "is a directory" in err
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads files regardless of permissions")
+def test_main_reports_an_unreadable_input(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    request_file = tmp_path / "request.json"
+    request_file.write_text(SAMPLE_JSON)
+    request_file.chmod(0)
+
+    assert main(["-i", str(request_file)]) == 2
     assert "cannot read" in capsys.readouterr().err
 
 

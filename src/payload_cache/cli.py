@@ -97,9 +97,17 @@ class CliSettings(BaseSettings):
     @field_validator("input")
     @classmethod
     def _input_file_must_exist(cls, value: str | None) -> str | None:
-        # exists() rather than is_file(): a pipe or process substitution is a fine input too.
-        # A path that exists but cannot be read is reported when it is read (see main()).
-        if value is not None and value != STDIO and not Path(value).exists():
+        # Not is_file(): a pipe or process substitution is a fine input too. An empty value
+        # is refused explicitly because Path("") means the current directory. A path that
+        # exists but cannot be read is reported when it is read (see main()).
+        if value is None or value == STDIO:
+            return value
+        if value == "":
+            raise ValueError("input file name is empty")
+        path = Path(value)
+        if path.is_dir():
+            raise ValueError(f"input path is a directory: {value}")
+        if not path.exists():
             raise ValueError(f"input file not found: {value}")
         return value
 
