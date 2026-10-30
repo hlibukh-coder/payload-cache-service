@@ -138,3 +138,25 @@ def test_configure_logging_is_idempotent_and_sets_the_level() -> None:
     assert len(json_handlers) == 1
     assert root.level == logging.WARNING
     configure_logging("INFO")  # leave the process as the other tests expect it
+
+
+def test_configure_logging_lets_log_level_reach_uvicorn_and_drops_colour_codes() -> None:
+    logging.getLogger("uvicorn.error").setLevel(logging.INFO)  # what uvicorn's own config does
+    configure_logging("WARNING")
+    try:
+        assert logging.getLogger("uvicorn.error").getEffectiveLevel() == logging.WARNING
+    finally:
+        configure_logging("INFO")
+    record = logging.makeLogRecord({"msg": "Started", "color_message": "\x1b[32mStarted\x1b[0m"})
+    assert "color_message" not in json.loads(JsonFormatter().format(record))
+
+
+def test_echo_sql_logs_statements_through_the_json_handler_only() -> None:
+    configure_logging("INFO", echo_sql=True)
+    try:
+        engine_logger = logging.getLogger("sqlalchemy.engine")
+        assert engine_logger.level == logging.INFO
+        assert not engine_logger.handlers  # no plain-text handler of SQLAlchemy's own
+    finally:
+        configure_logging("INFO")
+    assert logging.getLogger("sqlalchemy.engine").level == logging.WARNING

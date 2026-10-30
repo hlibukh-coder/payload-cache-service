@@ -19,7 +19,12 @@ request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
 # Attributes every LogRecord has. Anything else on a record arrived through ``extra=`` and is
 # emitted as a field of its own.
-_STANDARD_ATTRIBUTES = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
+# color_message is uvicorn's copy of the message with ANSI colour codes, meant for a terminal.
+_STANDARD_ATTRIBUTES = frozenset(vars(logging.makeLogRecord({}))) | {
+    "message",
+    "asctime",
+    "color_message",
+}
 
 
 class JsonFormatter(logging.Formatter):
@@ -42,8 +47,8 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(entry, ensure_ascii=False, default=str)
 
 
-def configure_logging(level: str) -> None:
-    """Send every logger, uvicorn's included, through one JSON handler on stdout.
+def configure_logging(level: str, *, echo_sql: bool = False) -> None:
+    """Send every logger, uvicorn's and SQLAlchemy's included, through one JSON handler on stdout.
 
     Idempotent, because ``create_app`` runs once per application and the tests build many
     applications in one process: a second call changes the level, not the handler count.
@@ -63,4 +68,10 @@ def configure_logging(level: str) -> None:
         uvicorn_logger = logging.getLogger(name)
         uvicorn_logger.handlers.clear()
         uvicorn_logger.propagate = True
+        # uvicorn pins its own level; inheriting the root's makes LOG_LEVEL apply to it too.
+        uvicorn_logger.setLevel(logging.NOTSET)
     logging.getLogger("uvicorn.access").disabled = True
+
+    # create_engine(echo=True) would attach a second, plain-text handler; raising the level of
+    # SQLAlchemy's logger is what echo does underneath, and keeps the statements in JSON.
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO if echo_sql else logging.WARNING)

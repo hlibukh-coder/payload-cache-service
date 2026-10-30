@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # with several replicas turns this off and runs `payload-cache-migrate` once instead.
     run_migrations: bool = True
 
-    # Echo SQL statements; handy when verifying the caching behaviour by hand.
+    # Log SQL statements (through the JSON log); handy when checking the caching by hand.
     echo_sql: bool = False
 
     # Threshold for the JSON log on stdout (see logging_setup.py). Health-probe access lines

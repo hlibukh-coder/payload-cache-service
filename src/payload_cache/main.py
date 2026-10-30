@@ -198,11 +198,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     # Process-wide, and done here rather than at import time for the same reason the engine
     # is: the factory is the one place that knows the settings.
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, echo_sql=settings.echo_sql)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        engine = make_engine(settings.database_url, echo=settings.echo_sql)
+        engine = make_engine(settings.database_url)
         if settings.run_migrations:
             upgrade_to_head(engine)
         else:
