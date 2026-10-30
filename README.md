@@ -263,8 +263,9 @@ TEST_DATABASE_URL=postgresql+psycopg://payload:payload@localhost:5433/payload py
 
 The same checks run on GitHub Actions for every push and pull request
 (`.github/workflows/ci.yml`): lint and types, the suite on SQLite under Python 3.12 and
-3.13 and on PostgreSQL 17, and a smoke test that builds the Docker image, waits for
-`/health` and runs `cache-cli` inside the container.
+3.13 with the newest dependencies the declared ranges admit, the suite on PostgreSQL 17 with
+exactly the versions in `requirements.lock` (what the image ships), and a smoke test that
+builds the Docker image, waits for `/health` and runs `cache-cli` inside the container.
 
 ## Decisions and trade-offs
 
