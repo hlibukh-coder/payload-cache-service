@@ -67,6 +67,24 @@ def test_help_reads_like_the_task_statement(capsys: pytest.CaptureFixture[str]) 
     assert "Exactly one of -i/--input or -j/--json" in out
 
 
+def test_help_has_no_null_defaults(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        parse("--help")
+
+    out = capsys.readouterr().out
+    assert "null" not in out
+    assert out.count("(default: not set)") == 2  # --input and --json
+
+
+def test_a_file_named_null_is_an_ordinary_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    Path("null").write_text(SAMPLE_JSON)
+
+    assert parse("-i", "null").input == "null"
+
+
 def test_repeat_must_be_positive() -> None:
     with pytest.raises(ValidationError, match="greater than 0"):
         parse("-j", "{}", "-r", "0")

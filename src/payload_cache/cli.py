@@ -50,6 +50,11 @@ class CliSettings(BaseSettings):
         case_sensitive=True,
         # Show "-i FILE" rather than "-i {FILE,null}" for optional flags.
         cli_hide_none_type=True,
+        # The string the command line parses as "no value". The default, "null", printed
+        # "(default: null)" in the help and made a file named null impossible to pass to -i;
+        # this one reads as English and is not a plausible file name or JSON document. It
+        # applies to every flag: `-o "not set"` means no output, and is refused as such.
+        cli_parse_none_str="not set",
     )
 
     # The task lists -h for both --host and --help; -h is universally help, so host gets -H.
