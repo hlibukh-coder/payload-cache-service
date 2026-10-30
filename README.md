@@ -382,25 +382,37 @@ builds the Docker image, waits for `/health` and runs `cache-cli` inside the con
 
 ```
 src/payload_cache/
-  api/app.py         FastAPI app factory, routes, dependencies
-  api/middleware.py   request id + access-log line (raw ASGI)
-  observability/logs.py JSON log formatter, uvicorn loggers redirected
-  observability/metrics.py      Prometheus collectors and the exposition for /metrics
-  core/service.py      payload id, interleaving, orchestration
-  core/cache.py        batched lookup / fill of transformer results
-  core/transformer.py  the simulated external service
-  db/models.py       ORM tables
-  db/engine.py           engine factory, dialect-specific ON CONFLICT insert
-  db/migrate.py       Alembic upgrade at start-up, payload-cache-migrate
-  migrations/     Alembic environment and revision scripts (inside the package)
-  db/eviction.py     start-up purge of other transformer versions, TTL sweep
-  api/schemas.py      API contracts, shared with the CLI
-  core/hashing.py      canonical JSON + SHA-256
-  config.py       service settings
-  cli.py          cache-cli
-tests/            unit and integration tests (pytest)
-alembic.ini       points the alembic command line at the package's migrations
-requirements.lock pinned dependencies for the Docker image
+  config.py              service settings, read from the environment
+  cli.py                 cache-cli
+  api/                   the HTTP side
+    app.py               FastAPI app factory, lifespan, routes
+    middleware.py        request id + access-log line (raw ASGI)
+    schemas.py           API contracts, shared with the CLI
+  core/                  what the service does
+    service.py           payload id, interleaving, orchestration
+    cache.py             batched lookup / fill of transformer results
+    transformer.py       the simulated external service
+    hashing.py           canonical JSON + SHA-256
+  db/                    persistence
+    engine.py            engine factory, dialect-specific ON CONFLICT insert
+    models.py            ORM tables
+    migrate.py           Alembic upgrade at start-up, payload-cache-migrate
+    migrations/          Alembic environment and revision scripts
+    eviction.py          start-up purge of other transformer versions, TTL sweep
+  observability/         how the service is watched
+    logs.py              JSON log formatter, uvicorn loggers redirected
+    metrics.py           Prometheus collectors and the exposition for /metrics
+tests/
+  conftest.py            shared fixtures and the example request
+  unit/                  no database, no application
+  integration/           real database, application in process
+alembic.ini              points the alembic command line at the package's migrations
+requirements.lock        pinned dependencies for the Docker image
 Dockerfile, docker-compose.yml
 .github/workflows/ci.yml
 ```
+
+`api/app.py` wires the packages together at start-up. Below it, `core` stores its results
+through `db`, `db` imports nothing from `core` or `api`, and `observability` imports none of
+the others. The one import that points upwards is `core/service.py` taking its request type
+from `api/schemas.py`, the contract the HTTP layer, the service and the CLI share.
