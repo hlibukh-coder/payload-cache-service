@@ -213,8 +213,11 @@ def test_a_failing_sweep_is_logged_and_the_loop_goes_on(caplog: pytest.LogCaptur
     async def run_three_sweeps() -> None:
         # The first tick comes after one interval; the loop then keeps going past a failure.
         task = asyncio.create_task(run_periodically(sweep, interval_seconds=0.001))
-        while len(calls) < 3:
-            await asyncio.sleep(0.001)
+        # Bounded, so a loop that died on the first failure fails the test instead of hanging.
+        async with asyncio.timeout(5):
+            while len(calls) < 3:
+                assert not task.done(), task
+                await asyncio.sleep(0.001)
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task

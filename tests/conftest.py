@@ -29,6 +29,15 @@ SAMPLE_OUTPUT = (
 SAMPLE_ID = "512df758f001b543a8272d884fd97045f67ce8ac446bbf0dc2a6c64ae79d8a4a"
 
 
+@pytest.fixture(autouse=True)
+def _no_service_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Settings reads the environment, so an exported DATABASE_URL or CACHE_TTL_SECONDS would
+    # otherwise change what every test that builds Settings runs against. Tests that want a
+    # variable set it themselves through monkeypatch.
+    for name in Settings.model_fields:
+        monkeypatch.delenv(name.upper(), raising=False)
+
+
 @pytest.fixture
 def sample_request() -> PayloadRequest:
     return PayloadRequest.model_validate(SAMPLE_REQUEST)

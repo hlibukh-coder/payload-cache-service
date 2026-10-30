@@ -42,7 +42,8 @@ class Settings(BaseSettings):
     # keeps everything, which is right while the transformer is deterministic and storage
     # is not the constraint. An evicted payload answers 404 until the same request is posted
     # again, when it gets the same id back.
-    cache_ttl_seconds: PositiveInt | None = None
+    # Capped at ten years: beyond that the cutoff arithmetic overflows datetime at start-up.
+    cache_ttl_seconds: int | None = Field(default=None, gt=0, le=10 * 365 * 24 * 3600)
     # How often the sweep runs when a TTL is set. Rows live up to this much longer than the
     # TTL, so a few minutes is plenty; shorter only adds load.
     eviction_interval_seconds: PositiveInt = 300

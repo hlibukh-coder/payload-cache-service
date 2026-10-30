@@ -2,7 +2,12 @@
 
 Two reasons: the transformer version moved on, so nothing will ever look the row's key up
 again (purged once, at start-up, when the version can change), or the row is older than the
-configured lifetime (swept periodically). Both are plain DELETEs by indexed columns.
+configured lifetime (swept periodically, by the indexed created_at). The version purge scans
+the tables, once per start-up; it is not indexed because it runs nowhere else.
+
+During a rolling deploy, replicas still on the old version keep writing old-version rows after
+the new ones have purged at start-up. Those rows are unreachable and harmless; the next
+start-up removes them, or the TTL sweep when one is configured.
 """
 
 import asyncio

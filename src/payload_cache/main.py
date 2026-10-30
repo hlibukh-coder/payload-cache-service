@@ -203,37 +203,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = make_engine(settings.database_url)
-        if settings.run_migrations:
-            upgrade_to_head(engine)
-        else:
-            ensure_at_head(engine)
-        session_factory = sessionmaker(engine, expire_on_commit=False)
-        # Rows another transformer version produced can never be served again (the version is
-        # in their keys); the version only changes with the configuration, so start-up is the
-        # one moment they can appear and the one place they are removed.
-        purge_other_versions(session_factory, settings.transformer_version)
-        app.state.resources = Resources(
-            session_factory=session_factory,
-            transformer=UpperCaseTransformer(settings.transformer_latency_seconds),
-            transformer_version=settings.transformer_version,
-        )
         eviction: asyncio.Task[None] | None = None
-        if settings.cache_ttl_seconds is not None:
-            sweep = partial(
-                evict_expired, session_factory, timedelta(seconds=settings.cache_ttl_seconds)
+        try:
+            if settings.run_migrations:
+                upgrade_to_head(engine)
+            else:
+                ensure_at_head(engine)
+            session_factory = sessionmaker(engine, expire_on_commit=False)
+            # Rows another transformer version produced can never be served again (the
+            # version is in their keys). The version changes with the configuration, that is
+            # at a start-up, so that is where they are removed (rolling deploys: eviction.py).
+            purge_other_versions(session_factory, settings.transformer_version)
+            app.state.resources = Resources(
+                session_factory=session_factory,
+                transformer=UpperCaseTransformer(settings.transformer_latency_seconds),
+                transformer_version=settings.transformer_version,
             )
-            # Once now, so a service that was down for longer than the TTL starts clean, then
-            # in the background for as long as the application runs.
-            sweep()
-            eviction = asyncio.create_task(
-                run_periodically(sweep, settings.eviction_interval_seconds), name="cache-eviction"
-            )
-        yield
-        if eviction is not None:
-            eviction.cancel()
-            with suppress(asyncio.CancelledError):
-                await eviction
-        engine.dispose()
+            if settings.cache_ttl_seconds is not None:
+                sweep = partial(
+                    evict_expired, session_factory, timedelta(seconds=settings.cache_ttl_seconds)
+                )
+                # Once now, so a service that was down for longer than the TTL starts clean,
+                # then in the background for as long as the application runs.
+                sweep()
+                eviction = asyncio.create_task(
+                    run_periodically(sweep, settings.eviction_interval_seconds),
+                    name="cache-eviction",
+                )
+            yield
+        finally:
+            # Also on a failed start-up, so the pool's connections are closed, not leaked.
+            if eviction is not None:
+                eviction.cancel()
+                with suppress(asyncio.CancelledError):
+                    await eviction
+            engine.dispose()
 
     app = FastAPI(
         title="Payload Cache Service",
