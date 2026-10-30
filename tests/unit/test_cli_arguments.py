@@ -167,6 +167,15 @@ def test_request_from_file(tmp_path: Path) -> None:
     assert request.list_1 == SAMPLE_REQUEST["list_1"]
 
 
+def test_the_shipped_example_is_the_request_from_the_task() -> None:
+    # README and the walkthrough run `cache-cli -i examples/request.json`.
+    example = Path(__file__).parents[2] / "examples" / "request.json"
+
+    assert load_request(parse("-i", str(example)), io.StringIO()) == PayloadRequest.model_validate(
+        SAMPLE_REQUEST
+    )
+
+
 def test_request_file_may_start_with_a_bom(tmp_path: Path) -> None:
     request_file = tmp_path / "request.json"
     request_file.write_text(SAMPLE_JSON, encoding="utf-8-sig")

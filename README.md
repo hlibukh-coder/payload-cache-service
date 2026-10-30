@@ -230,7 +230,8 @@ Exactly one of `--input`/`--json` is required; `--help` prints the full descript
 ```bash
 cache-cli --repeat 3 --json '{"list_1": ["first string", "second string", "third string"],
                              "list_2": ["other string", "another string", "last string"]}'
-cat request.json | cache-cli --input - --output report.json
+cache-cli --input examples/request.json
+cat examples/request.json | cache-cli --input - --output report.json
 ```
 
 ```json
@@ -407,6 +408,7 @@ tests/
   unit/                  no database, no application
   integration/           real database, application in process
 alembic.ini              points the alembic command line at the package's migrations
+examples/request.json    the example request from the task, for cache-cli -i
 requirements.lock        pinned dependencies for the Docker image
 Dockerfile, docker-compose.yml
 .github/workflows/ci.yml
