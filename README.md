@@ -170,8 +170,11 @@ template, the status and the duration:
  "route": "/payload", "status": 201, "duration_ms": 3.81}
 ```
 
-Health probes and metric scrapes are logged at `DEBUG` so the access log stays about real
-traffic; uvicorn's own access log is turned off because this line supersedes it.
+Successful health probes and metric scrapes are logged at `DEBUG` so the access log stays
+about real traffic; a failing one, like every 5xx, is logged at `ERROR`. An unhandled
+exception is logged with its traceback and the request id, and answered with a 500 that
+carries the same `X-Request-ID`, so a client's bug report leads straight to the traceback.
+uvicorn's own access log is turned off because this line supersedes it.
 
 `GET /metrics` serves Prometheus metrics (`metrics.py`):
 
@@ -180,7 +183,7 @@ traffic; uvicorn's own access log is turned off because this line supersedes it.
 | `payload_cache_transform_strings_total`        | `result` = `hit` \| `miss`  | distinct strings per request served from the cache or sent to the transformer; misses are the transformer calls made |
 | `payload_cache_payloads_total`                 | `result` = `created` \| `reused` | `POST /payload` outcomes                                           |
 | `payload_cache_evicted_rows_total`             | `table`, `reason` = `version` \| `ttl` | rows removed by the start-up purge of other transformer versions and by the TTL sweep |
-| `payload_cache_http_request_duration_seconds`  | `method`, `route`, `status` | latency histogram by route template; unrouted requests share the label `unmatched`, so client-chosen paths cannot multiply the series |
+| `payload_cache_http_request_duration_seconds`  | `method`, `route`, `status` | latency histogram by route template; unrouted requests share the label `unmatched` and non-standard methods the label `other`, so client-chosen values cannot multiply the series |
 
 The image runs one uvicorn worker, so the process-wide registry describes the whole
 container; scale with replicas, each scraped on its own, rather than with `--workers`,

@@ -23,10 +23,25 @@ REQUEST_ID_HEADER = "X-Request-ID"
 # when it plainly is an identifier: bounded, with no whitespace or control characters that
 # could forge extra log lines. Anything else is replaced rather than rejected; the id exists
 # for operators, not for the client.
-_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
-# Probes and scrapes arrive every few seconds and would drown the access log; they are
-# logged at DEBUG so the log stays about real requests but can still be switched on.
+_REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+# Probes and scrapes arrive every few seconds and would drown the access log; when they
+# succeed they are logged at DEBUG, so the log stays about real requests. A failing probe is
+# logged like any failure: a 503 from /health is how a database outage first shows.
 QUIET_ROUTES = frozenset({"/health", "/metrics"})
+# The method is client-chosen and becomes a metric label; anything outside the standard set
+# shares one value so it cannot multiply the series.
+KNOWN_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
+OTHER_METHOD = "other"
+
+INTERNAL_ERROR_BODY = b'{"detail":"Internal Server Error"}'
+
+
+def _level(route: str | None, status_code: int) -> int:
+    if status_code >= 500:
+        return logging.ERROR
+    if route in QUIET_ROUTES and status_code < 400:
+        return logging.DEBUG
+    return logging.INFO
 
 
 class RequestContextMiddleware:
@@ -39,32 +54,54 @@ class RequestContextMiddleware:
             return
 
         incoming = Headers(scope=scope).get(REQUEST_ID_HEADER)
-        request_id = incoming if incoming and _REQUEST_ID_PATTERN.match(incoming) else uuid4().hex
+        request_id = (
+            incoming if incoming and _REQUEST_ID_PATTERN.fullmatch(incoming) else uuid4().hex
+        )
         token = request_id_var.set(request_id)
-        # What the client ends up with when the application raises and the outer error
-        # handler answers: no response start passes through here in that case.
         status_code = 500
+        response_started = False
         started = time.perf_counter()
 
         async def send_with_request_id(message: Message) -> None:
-            nonlocal status_code
+            nonlocal status_code, response_started
             if message["type"] == "http.response.start":
                 status_code = message["status"]
+                response_started = True
                 MutableHeaders(scope=message).append(REQUEST_ID_HEADER, request_id)
             await send(message)
 
         try:
             await self.app(scope, receive, send_with_request_id)
+        except Exception:
+            # Logged here, while the request id is still set, so the traceback carries it;
+            # Starlette's outer error handler would log it after this middleware has returned.
+            logger.exception("unhandled error", extra={"request_id": request_id})
+            if response_started:
+                raise  # too late to answer; let the server close the connection
+            # Answered here rather than re-raised, so the 500 carries the request id the
+            # traceback was logged under, and the traceback is logged once, not twice.
+            await send_with_request_id(
+                {
+                    "type": "http.response.start",
+                    "status": 500,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(INTERNAL_ERROR_BODY)).encode()),
+                    ],
+                }
+            )
+            await send_with_request_id({"type": "http.response.body", "body": INTERNAL_ERROR_BODY})
         finally:
             # The route template ("/payload/{payload_id}") rather than the concrete path: it
             # names the handler, and it stays low-cardinality when it becomes a metric label.
             route = getattr(scope.get("route"), "path", None)
             elapsed = time.perf_counter() - started
+            method = scope["method"] if scope["method"] in KNOWN_METHODS else OTHER_METHOD
             HTTP_REQUEST_DURATION.labels(
-                scope["method"], route or UNMATCHED_ROUTE, str(status_code)
+                method, route or UNMATCHED_ROUTE, str(status_code)
             ).observe(elapsed)
             logger.log(
-                logging.DEBUG if route in QUIET_ROUTES else logging.INFO,
+                _level(route, status_code),
                 "%s %s -> %d",
                 scope["method"],
                 scope["path"],

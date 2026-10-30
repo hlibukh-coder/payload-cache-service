@@ -86,3 +86,12 @@ def test_unrouted_requests_share_one_label_instead_of_leaking_paths(client: Test
 
     assert REGISTRY.get_sample_value(name, labels) == before + 2
     assert "/no/such/path-1" not in client.get("/metrics").text
+
+
+def test_non_standard_methods_share_one_label(client: TestClient) -> None:
+    name = "payload_cache_http_request_duration_seconds_count"
+    labels = {"method": "other", "route": "/payload", "status": "405"}
+    before = REGISTRY.get_sample_value(name, labels) or 0.0
+    client.request("BREW", "/payload")
+    assert REGISTRY.get_sample_value(name, labels) == before + 1
+    assert 'method="BREW"' not in client.get("/metrics").text

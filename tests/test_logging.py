@@ -24,7 +24,7 @@ def test_a_well_formed_client_request_id_is_kept(client: TestClient) -> None:
     assert response.headers[REQUEST_ID_HEADER] == "trace-1.2:abc"
 
 
-@pytest.mark.parametrize("bad", ["x" * 129, "has space", "tab\there", ""])
+@pytest.mark.parametrize("bad", ["x" * 129, "has space", "tab\there", "", "id\n"])
 def test_a_malformed_client_request_id_is_replaced(client: TestClient, bad: str) -> None:
     response = client.get("/health", headers={REQUEST_ID_HEADER: bad})
     assert response.headers[REQUEST_ID_HEADER] != bad
@@ -90,9 +90,15 @@ def test_the_request_id_is_visible_inside_a_handler(app: FastAPI) -> None:
     assert response.json() == {"seen": "abc-123"}
 
 
-def test_the_request_id_does_not_leak_past_the_request(client: TestClient) -> None:
-    client.get("/health", headers={REQUEST_ID_HEADER: "leaky"})
-    assert request_id_var.get() is None
+def test_the_request_id_does_not_leak_into_the_next_request(app: FastAPI) -> None:
+    def echo_request_id() -> dict[str, str | None]:
+        return {"seen": request_id_var.get()}
+
+    app.add_api_route("/echo-request-id", echo_request_id)
+    with TestClient(app) as client:
+        client.get("/echo-request-id", headers={REQUEST_ID_HEADER: "first-request"})
+        second = client.get("/echo-request-id")
+    assert second.json()["seen"] == second.headers[REQUEST_ID_HEADER] != "first-request"
 
 
 def test_json_formatter_emits_one_object_with_extras_and_the_request_id() -> None:
@@ -160,3 +166,44 @@ def test_echo_sql_logs_statements_through_the_json_handler_only() -> None:
     finally:
         configure_logging("INFO")
     assert logging.getLogger("sqlalchemy.engine").level == logging.WARNING
+
+
+def test_an_unhandled_error_is_logged_with_the_request_id_and_answered_with_it(
+    app: FastAPI, caplog: pytest.LogCaptureFixture
+) -> None:
+    def explode() -> None:
+        raise RuntimeError("boom")
+
+    app.add_api_route("/explode", explode)
+    with (
+        caplog.at_level(logging.INFO, logger="payload_cache.http"),
+        TestClient(app, raise_server_exceptions=False) as client,
+    ):
+        response = client.get("/explode", headers={REQUEST_ID_HEADER: "req-500"})
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal Server Error"}
+    assert response.headers[REQUEST_ID_HEADER] == "req-500"
+    records = [r for r in caplog.records if r.name == "payload_cache.http"]
+    [traceback] = [r for r in records if r.exc_info]
+    assert vars(traceback)["request_id"] == "req-500"
+    assert "RuntimeError: boom" in JsonFormatter().format(traceback)
+    [access] = [r for r in records if not r.exc_info]
+    assert access.levelno == logging.ERROR and vars(access)["status"] == 500
+
+
+def test_a_failing_health_probe_is_logged_at_error_not_debug(
+    app: FastAPI, caplog: pytest.LogCaptureFixture
+) -> None:
+    from dataclasses import replace
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    with TestClient(app) as client:
+        broken = create_engine("sqlite:////nonexistent-directory/db.sqlite")
+        app.state.resources = replace(app.state.resources, session_factory=sessionmaker(broken))
+        with caplog.at_level(logging.INFO, logger="payload_cache.http"):
+            assert client.get("/health").status_code == 503
+    [record] = [r for r in caplog.records if r.name == "payload_cache.http"]
+    assert record.levelno == logging.ERROR
